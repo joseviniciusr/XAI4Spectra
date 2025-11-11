@@ -1,0 +1,17 @@
+# Inferred dependencies for XAI4Spectra
+# These are minimal, unpinned specs inferred from notebook imports.
+# Pin versions if you need strict reproducibility.
+pandas
+numpy
+scikit-learn
+scipy
+matplotlib
+plotly
+networkx
+kennard-stone
+jupyter
+ipython
+
+# Optional / useful tools
+# seaborn  # visualization helper (optional)
+# tqdm     # progress bars (optional)
