@@ -335,7 +335,8 @@ def create_predicate_info_dict(predicates_df, predicate_indicator_df, zone_aggre
         mask_satisfied = predicate_indicator_df[pred_rule] == 1
         
         # Índices das amostras que satisfazem o predicado
-        satisfied_indices = zone_aggregated_df.index[mask_satisfied].tolist()
+        # Usar np.where() para compatibilidade com todos os tipos de índices
+        satisfied_indices = np.where(mask_satisfied)[0].tolist()
         
         # 2. VERIFICAR SE HÁ AMOSTRAS SATISFEITAS
         if not satisfied_indices:  # lista vazia
@@ -697,7 +698,7 @@ def calculate_predicate_metrics(bags_result, metric='mutual_info', threshold=0.1
                     y_pred, 
                     discrete_features=False,  # X é contínua
                     n_neighbors=n_neighbors,
-                    random_state=None  # reprodutibilidade
+                    random_state=42  # reprodutibilidade
                 )
                 metrics[pred_rule] = mi_score[0]  # MI retorna array de 1 elemento
                 
@@ -740,7 +741,7 @@ def calculate_predicate_metrics(bags_result, metric='mutual_info', threshold=0.1
     return metrics_results_dict
 
 def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df, 
-                         predicates_df, random_state=42):
+                         predicates_df, random_state=42, show_details=True):
     """
     Constrói um grafo direcionado de predicados a partir dos resultados de bagging.
     
@@ -786,7 +787,7 @@ def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df,
     -------
     - **DG** : nx.DiGraph
         Grafo direcionado contendo:
-        - **Nós**: Predicados + nós terminais ('Class_eut', 'Class_dist')
+        - **Nós**: Predicados + nós terminais ('Class_1', 'Class_2')
         - **Atributos dos nós**: 
             - 'node_type': 'predicate' ou 'terminal'
             - 'class_label': 'eut' ou 'dist' (apenas para terminais)
@@ -818,8 +819,8 @@ def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df,
     DG = nx.DiGraph()
     
     # Adicionar nós terminais
-    DG.add_node('Class_eut', node_type='terminal', class_label='eut')
-    DG.add_node('Class_dist', node_type='terminal', class_label='dist')
+    DG.add_node('Class_A', node_type='terminal', class_label='A')
+    DG.add_node('Class_B', node_type='terminal', class_label='B')
     
     # ACUMULAÇÃO DE ARESTAS    
     for bag_name, bag_predicates_dict in bags_result.items():
@@ -855,7 +856,9 @@ def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df,
         
         # Conectar último predicado ao terminal
         last_pred = ordered_predicates[-1]
-        DG.add_node(last_pred, node_type='predicate')
+        DG.add_node(last_pred, node_type='predicate') # o add_node aqui é para garantir que o nó do último predicado exista
+        # esse passo pode ser redundante, mas garante que o nó esteja presente no grafo antes de criar a aresta para o terminal
+        # Por ex casos de bags com um único predicado nao gerariam o nó do último predicado no loop anterior
         
         df_last = bag_predicates_dict[last_pred]
         class_counts = df_last['Class_Predicted'].value_counts()
@@ -886,7 +889,16 @@ def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df,
             
             processed.add((u, v))
             processed.add((v, u))
-    
+    print(f"\nTotal de pares bidirecionais encontrados: {len(bidirectional_pairs)}")       
+    # Mostrar top 10 pares bidirecionais
+    # if len(bidirectional_pairs) > 0:
+    #     print("Top 10 pares bidirecionais (com pesos):")
+    #     for pair in bidirectional_pairs[:10]:
+    #         print(f"  {pair['node_A']} <--> {pair['node_B']} | "
+    #               f"Peso {pair['node_A']}→{pair['node_B']}: {pair['weight_A_to_B']} | "
+    #               f"Peso {pair['node_B']}→{pair['node_A']}: {pair['weight_B_to_A']}")
+
+    n_removed = 0
     # Remover arestas perdedoras
     for pair in bidirectional_pairs:
         u = pair['node_A']
@@ -896,14 +908,37 @@ def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df,
         
         if weight_forward > weight_reverse:
             DG.remove_edge(v, u)
+            print(f"Removida aresta {v} -> {u} (peso {weight_reverse})") if show_details else None
+            print(f"Mantida aresta {u} -> {v} (peso {weight_forward})\n") if show_details else None
+            print("="*70 + "\n") if show_details else None
+            n_removed += 1
         elif weight_reverse > weight_forward:
             DG.remove_edge(u, v)
+            print(f"Removida aresta {u} -> {v} (peso {weight_forward})") if show_details else None
+            print(f"Mantida aresta {v} -> {u} (peso {weight_reverse})\n") if show_details else None
+            print("="*70 + "\n") if show_details else None
+            n_removed += 1
         else:
             # Empate: escolha aleatória
             if np.random.rand() > 0.5:
                 DG.remove_edge(v, u)
+                print(f"Empate! Removida aresta {v} -> {u} (peso {weight_reverse})") if show_details else None
+                print(f"Mantida aresta {u} -> {v} (peso {weight_forward})\n") if show_details else None
+                print("="*70 + "\n") if show_details else None
+                n_removed += 1
             else:
                 DG.remove_edge(u, v)
+                print(f"Empate! Removida aresta {u} -> {v} (peso {weight_forward})") if show_details else None
+                print(f"Mantida aresta {v} -> {u} (peso {weight_reverse})\n") if show_details else None
+                print("="*70 + "\n") if show_details else None
+                n_removed += 1
+
+    # resumo final do grafo
+    print(f"\nTotal de arestas iniciais: {DG.number_of_edges() + n_removed}")
+    print(f"Total de arestas removidas por bidirecionalidade: {n_removed}")
+    print(f"Arestas bidirecionais restantes: {len(bidirectional_pairs) - n_removed}")
+    print(f"Total de nós predicados: {len([n for n, attr in DG.nodes(data=True) if attr['node_type'] == 'predicate'])}")
+    print(f"Total de nós terminais: {len([n for n, attr in DG.nodes(data=True) if attr['node_type'] == 'terminal'])}\n")      
     
     return DG
 
