@@ -144,8 +144,8 @@ vip_scores_unique_df = vip_scores_unique_df.sort_values(by='VIP_Score', ascendin
 from deap import creator, base, tools, algorithms
 import random
 
-rseed = 42
-random.seed(rseed) # setting random seed for reproducibility
+# Lista de sementes para múltiplas execuções
+rseed_list = [0, 42]
 
 pop_size = 200 # population size
 num_generations = 100 # number of generations
@@ -243,10 +243,10 @@ def RBO_evaluate(individual):
         predicates_quantiles = exp.predicates_by_quantiles(zone_sums_df, [0.2, 0.4, 0.6, 0.8])
         co_occurrence_matrix_df = predicates_quantiles[2]
 
-        training_samples = len(Xcalclass)
-        y_predicted_numeric = plsda_results[5].iloc[:, -1]
+        training_samples = len(Xcalclass) # number of samples in the calibration set
+        y_predicted_numeric = plsda_results[5].iloc[:, -1] # predicted numeric values for calibration set
 
-        seed = rseed
+        seed = rseed # using the same seed for reproducibility
             
         # Bagging
         bags_result = exp.bagging_predicates(
@@ -340,63 +340,82 @@ def RBO_evaluate(individual):
 # registrando a função de avaliação no toolbox
 toolbox.register("evaluate", RBO_evaluate)
 
-# setting up statistics to be recorded and hall of fame
-statistics = tools.Statistics(lambda ind: ind.fitness.values)
-statistics.register("mean", np.mean)
-statistics.register("std", np.std)
-statistics.register("var", np.var)
-statistics.register("min", np.min)
-statistics.register("max", np.max)
+# Listas para acumular resultados de todas as sementes
+all_hof_dfs = []
+all_statistics_dfs = []
 
-hall_of_fame = tools.HallOfFame(20) # keeping the top 5 individuals
+# Loop sobre múltiplas sementes
+for rseed in rseed_list:
+    print(f"\n{'#'*80}")
+    print(f"EXECUTANDO GA COM SEMENTE: {rseed}")
+    print(f"{'#'*80}\n")
+    
+    random.seed(rseed) # setting random seed for reproducibility
+    
+    # setting up statistics to be recorded and hall of fame
+    statistics = tools.Statistics(lambda ind: ind.fitness.values)
+    statistics.register("mean", np.mean)
+    statistics.register("std", np.std)
+    statistics.register("var", np.var)
+    statistics.register("min", np.min)
+    statistics.register("max", np.max)
+    
+    hall_of_fame = tools.HallOfFame(20) # keeping the top 5 individuals
+    
+    # criando a população inicial
+    population = toolbox.population(n=pop_size)
+    
+    # excecutando a busca evolutiva via algoritmo genético
+    print(f"Início do Processo Evolutivo (Pop: {pop_size}, Gens: {num_generations}) ---")
+    print("=" * 80)
+    
+    pop, log = algorithms.eaSimple(population,
+                                   toolbox,
+                                   cxpb=crossover_prob,
+                                   mutpb=mutation_prob,
+                                   ngen=num_generations,
+                                   stats=statistics,
+                                   halloffame=hall_of_fame,
+                                   verbose=True)
+    
+    print("=" * 80)
+    print("Fim da Evolução\n")
+    
+    # interpretando os resultados
+    print("="*80)
+    print("MELHORES INDIVÍDUOS ENCONTRADOS:")
+    print("="*80)
+    for i, individual in enumerate(hall_of_fame):
+        print(f"\n Ranking #{i+1}")
+        print(f"   Fitness (RBO Score): {individual.fitness.values[0]:.4f}")
+        print(f"   Parâmetros:")
+        print(f"      • Agregador: {individual[0]}")
+        print(f"      • N° Bags: {individual[1]}")
+        print(f"      • Fração amostras/bag: {individual[2]:.2f}")
+        print(f"      • Fração min amostras/predicado: {individual[3]:.2f}")
+        print(f"      • Replacement: {individual[4]}")
+        #print(f"      • Bagging em predicados: {individual[5]}")
+    
+    # convertendo o hall_of_fame desta semente em um DataFrame
+    hof_df = pd.DataFrame([{
+        'Seed' : rseed,
+        'Rank': i+1,
+        'Fitness_RBO_Score': individual.fitness.values[0],
+        'Agregador': individual[0],
+        'N_Bags': individual[1],
+        'Frac_Samples_per_Bag': individual[2],
+        'Frac_Min_Samples_per_Predicate': individual[3],
+        'Replacement': individual[4]
+    } for i, individual in enumerate(hall_of_fame)])
+    all_hof_dfs.append(hof_df)
+    
+    # salvando as estatísticas do processo evolutivo desta semente
+    statistics_df = pd.DataFrame(log)
+    statistics_df['Seed'] = rseed
+    all_statistics_dfs.append(statistics_df)
 
-# criando a população inicial
-population = toolbox.population(n=pop_size)
-
-# excecutando a busca evolutiva via algoritmo genético
-print(f"Início do Processo Evolutivo (Pop: {pop_size}, Gens: {num_generations}) ---")
-print("=" * 80)
-
-pop, log = algorithms.eaSimple(population,
-                               toolbox,
-                               cxpb=crossover_prob,
-                               mutpb=mutation_prob,
-                               ngen=num_generations,
-                               stats=statistics,
-                               halloffame=hall_of_fame,
-                               verbose=True)
-
-print("=" * 80)
-print("Fim da Evolução\n")
-
-# interpretando os resultados
-print("="*80)
-print("MELHORES INDIVÍDUOS ENCONTRADOS:")
-print("="*80)
-for i, individual in enumerate(hall_of_fame):
-    print(f"\n Ranking #{i+1}")
-    print(f"   Fitness (RBO Score): {individual.fitness.values[0]:.4f}")
-    print(f"   Parâmetros:")
-    print(f"      • Agregador: {individual[0]}")
-    print(f"      • N° Bags: {individual[1]}")
-    print(f"      • Fração amostras/bag: {individual[2]:.2f}")
-    print(f"      • Fração min amostras/predicado: {individual[3]:.2f}")
-    print(f"      • Replacement: {individual[4]}")
-    #print(f"      • Bagging em predicados: {individual[5]}")
-
-# convertendo o hall_of_fame (os melhores indivíduos ao longo de toda a evolução) em um DataFrame e salvando como CSV
-hof_df = pd.DataFrame([{
-    'Seed' : rseed,
-    'Rank': i+1,
-    'Fitness_RBO_Score': individual.fitness.values[0],
-    'Agregador': individual[0],
-    'N_Bags': individual[1],
-    'Frac_Samples_per_Bag': individual[2],
-    'Frac_Min_Samples_per_Predicate': individual[3],
-    'Replacement': individual[4]
-} for i, individual in enumerate(hall_of_fame)])
-hof_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_hof.csv', index=False, sep=';')
-
-# salvando as estatísticas do processo evolutivo
-statistics_df = pd.DataFrame(log)
-statistics_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_statistics.csv', index=False, sep=';')
+# Concatenar todos os resultados e salvar
+final_hof_df = pd.concat(all_hof_dfs, ignore_index=True)
+final_hof_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_hof.csv', index=False, sep=';')
+final_statistics_df = pd.concat(all_statistics_dfs, ignore_index=True)
+final_statistics_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_statistics.csv', index=False, sep=';')
