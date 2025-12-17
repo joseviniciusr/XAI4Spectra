@@ -144,7 +144,8 @@ vip_scores_unique_df = vip_scores_unique_df.sort_values(by='VIP_Score', ascendin
 from deap import creator, base, tools, algorithms
 import random
 
-random.seed(42) # setting random seed for reproducibility
+rseed = 42
+random.seed(rseed) # setting random seed for reproducibility
 
 pop_size = 200 # population size
 num_generations = 100 # number of generations
@@ -245,7 +246,7 @@ def RBO_evaluate(individual):
         training_samples = len(Xcalclass)
         y_predicted_numeric = plsda_results[5].iloc[:, -1]
 
-        seed = 42
+        seed = rseed
             
         # Bagging
         bags_result = exp.bagging_predicates(
@@ -341,12 +342,13 @@ toolbox.register("evaluate", RBO_evaluate)
 
 # setting up statistics to be recorded and hall of fame
 statistics = tools.Statistics(lambda ind: ind.fitness.values)
-statistics.register("avg", np.mean)
+statistics.register("mean", np.mean)
 statistics.register("std", np.std)
+statistics.register("var", np.var)
 statistics.register("min", np.min)
 statistics.register("max", np.max)
 
-hall_of_fame = tools.HallOfFame(5) # keeping the top 5 individuals
+hall_of_fame = tools.HallOfFame(20) # keeping the top 5 individuals
 
 # criando a população inicial
 population = toolbox.population(n=pop_size)
@@ -380,4 +382,21 @@ for i, individual in enumerate(hall_of_fame):
     print(f"      • Fração amostras/bag: {individual[2]:.2f}")
     print(f"      • Fração min amostras/predicado: {individual[3]:.2f}")
     print(f"      • Replacement: {individual[4]}")
-    print(f"      • Bagging em predicados: {individual[5]}")
+    #print(f"      • Bagging em predicados: {individual[5]}")
+
+# convertendo o hall_of_fame (os melhores indivíduos ao longo de toda a evolução) em um DataFrame e salvando como CSV
+hof_df = pd.DataFrame([{
+    'Seed' : rseed,
+    'Rank': i+1,
+    'Fitness_RBO_Score': individual.fitness.values[0],
+    'Agregador': individual[0],
+    'N_Bags': individual[1],
+    'Frac_Samples_per_Bag': individual[2],
+    'Frac_Min_Samples_per_Predicate': individual[3],
+    'Replacement': individual[4]
+} for i, individual in enumerate(hall_of_fame)])
+hof_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_hof.csv', index=False, sep=';')
+
+# salvando as estatísticas do processo evolutivo
+statistics_df = pd.DataFrame(log)
+statistics_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_statistics.csv', index=False, sep=';')
