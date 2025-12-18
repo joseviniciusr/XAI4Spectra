@@ -325,12 +325,16 @@ def RBO_evaluate(individual):
         vip_list = vip_scores_unique_df['Zone'].tolist()
         lrc_list = lrc_unique_df['Zone'].tolist()
         rbo_score = rbo.RankingSimilarity(vip_list, lrc_list).rbo(p=0.7, k=10)
-        
+        print(f"RBO Score: {rbo_score:.4f} | Parâmetros: agg={agregate_function}, nbags={nbags}, "
+              f"sample_frac={n_samples_per_bag_frac:.2f}, predicate_frac={min_samples_per_predicate_frac:.2f}, "
+              f"replace={replacement}")
+              #f"replace={replacement}, bag_preds={bagging_on_predicates}")
+
         return (rbo_score,)
     
     except Exception as err:
         # Em caso de erro, retornar fitness 0 e imprimir o erro
-        print(f"ERRO na avaliação: {str(err)}")
+        print(f"ERRO: {str(err)}")
         print(f"Parâmetros: agg={individual[0]}, nbags={individual[1]}, "
               f"sample_frac={individual[2]:.2f}, predicate_frac={individual[3]:.2f}, "
               f"replace={individual[4]}")
