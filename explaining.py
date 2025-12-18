@@ -200,8 +200,8 @@ def predicates_by_quantiles(zone_sums_df, quantiles):
         else:
             return np.nan
     
-    # initializing empty DataFrame
-    predicate_indicator_df = pd.DataFrame(index=zone_sums_df.index)
+    # compute all columns first, then concatenate them at once
+    columns_dict = {}
     
     # iterating over each predicate
     for _, row in predicates_df.iterrows():
@@ -209,9 +209,12 @@ def predicates_by_quantiles(zone_sums_df, quantiles):
         zone = row['zone']
         thresholds = row['thresholds']
         operator = row['operator']
-        predicate_indicator_df[pred] = zone_sums_df[zone].apply(
+        columns_dict[pred] = zone_sums_df[zone].apply(
             lambda v: eval_predicate(v, thresholds, operator)
         ).astype(int)
+    
+    # create DataFrame from all columns at once
+    predicate_indicator_df = pd.DataFrame(columns_dict, index=zone_sums_df.index)
     
     # setting column names to rules for better readability
     predicate_indicator_df.columns = predicates_df['rule'].tolist()
