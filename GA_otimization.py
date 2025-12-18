@@ -329,6 +329,8 @@ def RBO_evaluate(individual):
               f"sample_frac={n_samples_per_bag_frac:.2f}, predicate_frac={min_samples_per_predicate_frac:.2f}, "
               f"replace={replacement}")
               #f"replace={replacement}, bag_preds={bagging_on_predicates}")
+        print("=" * 80)
+
 
         return (rbo_score,)
     
@@ -339,6 +341,8 @@ def RBO_evaluate(individual):
               f"sample_frac={individual[2]:.2f}, predicate_frac={individual[3]:.2f}, "
               f"replace={individual[4]}")
               #f"replace={individual[4]}, bag_preds={individual[5]}")
+        print("=" * 80)
+
         return (0.0,)
 
 # registrando a função de avaliação no toolbox
