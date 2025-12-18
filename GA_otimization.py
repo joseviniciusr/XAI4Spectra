@@ -145,10 +145,10 @@ from deap import creator, base, tools, algorithms
 import random
 
 # Lista de sementes para múltiplas execuções
-rseed_list = [0, 42]
+rseed_list = [0, 1, 42]
 
-pop_size = 200 # population size
-num_generations = 100 # number of generations
+pop_size = 300 # population size
+num_generations = 200 # number of generations
 crossover_prob = 0.7 # crossover probability
 mutation_prob = 0.1 # mutation probability
 
@@ -225,7 +225,7 @@ def mutate_individual(individual):
 toolbox.register("mutate", mutate_individual)
 
 # selection operator
-toolbox.register("select", tools.selTournament, tournsize=5)
+toolbox.register("select", tools.selTournament, tournsize=10)
 
 # fitness evaluation function
 def RBO_evaluate(individual):
