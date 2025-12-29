@@ -200,8 +200,8 @@ def predicates_by_quantiles(zone_sums_df, quantiles):
         else:
             return np.nan
     
-    # initializing empty DataFrame
-    predicate_indicator_df = pd.DataFrame(index=zone_sums_df.index)
+    # compute all columns first, then concatenate them at once
+    columns_dict = {}
     
     # iterating over each predicate
     for _, row in predicates_df.iterrows():
@@ -209,9 +209,12 @@ def predicates_by_quantiles(zone_sums_df, quantiles):
         zone = row['zone']
         thresholds = row['thresholds']
         operator = row['operator']
-        predicate_indicator_df[pred] = zone_sums_df[zone].apply(
+        columns_dict[pred] = zone_sums_df[zone].apply(
             lambda v: eval_predicate(v, thresholds, operator)
         ).astype(int)
+    
+    # create DataFrame from all columns at once
+    predicate_indicator_df = pd.DataFrame(columns_dict, index=zone_sums_df.index)
     
     # setting column names to rules for better readability
     predicate_indicator_df.columns = predicates_df['rule'].tolist()
@@ -489,7 +492,10 @@ def bagging_predicates(zone_sums_df, y_predicted_numeric, predicates_df,
         for pred_rule in selected_predicate_rules:
             
             # Recupera metadados do predicado
-            pred_row = predicates_df[predicates_df['rule'] == pred_rule].iloc[0]
+            pred_row_filtered = predicates_df[predicates_df['rule'] == pred_rule]
+            if len(pred_row_filtered) == 0:
+                continue  # Predicado não encontrado, pula
+            pred_row = pred_row_filtered.iloc[0]
             zone = pred_row['zone']
             threshold = float(pred_row['thresholds'])
             operator = pred_row['operator']
@@ -845,7 +851,12 @@ def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df,
             DG.add_node(pred_next, node_type='predicate')
             
             # Peso da aresta = co-ocorrência
-            co_occurrence = co_occurrence_matrix_df.loc[pred_current, pred_next]
+            co_occurrence_raw = co_occurrence_matrix_df.loc[pred_current, pred_next]
+            # Garantir que seja escalar
+            if isinstance(co_occurrence_raw, (pd.Series, pd.DataFrame)):
+                co_occurrence = float(co_occurrence_raw.iloc[0] if isinstance(co_occurrence_raw, pd.Series) else co_occurrence_raw.iloc[0, 0])
+            else:
+                co_occurrence = float(co_occurrence_raw)
             
             # Acumulação de peso
             if DG.has_edge(pred_current, pred_next):
@@ -877,8 +888,19 @@ def build_predicate_graph(bags_result, mi_results_dict, co_occurrence_matrix_df,
     
     for u, v in DG.edges():
         if DG.has_edge(v, u) and (v, u) not in processed:
-            weight_forward = DG[u][v]['weight']
-            weight_reverse = DG[v][u]['weight']
+            weight_forward_raw = DG[u][v]['weight']
+            weight_reverse_raw = DG[v][u]['weight']
+            
+            # Garantir que sejam escalares
+            if isinstance(weight_forward_raw, (pd.Series, pd.DataFrame)):
+                weight_forward = float(weight_forward_raw.iloc[0] if isinstance(weight_forward_raw, pd.Series) else weight_forward_raw.iloc[0, 0])
+            else:
+                weight_forward = float(weight_forward_raw)
+                
+            if isinstance(weight_reverse_raw, (pd.Series, pd.DataFrame)):
+                weight_reverse = float(weight_reverse_raw.iloc[0] if isinstance(weight_reverse_raw, pd.Series) else weight_reverse_raw.iloc[0, 0])
+            else:
+                weight_reverse = float(weight_reverse_raw)
             
             bidirectional_pairs.append({
                 'node_A': u,
@@ -1023,15 +1045,15 @@ def calculate_lrc(graphs_by_seed, predicates_df):
                 operators.append(None)
             else:
                 # Predicado: buscar metadados em predicates_df
-                pred_row = predicates_df[predicates_df['rule'] == node]
+                pred_row_filtered = predicates_df[predicates_df['rule'] == node]
                 
-                if len(pred_row) == 0:
+                if len(pred_row_filtered) == 0:
                     # Predicado não encontrado (não deveria acontecer)
                     zones.append('Unknown')
                     thresholds.append(None)
                     operators.append(None)
                 else:
-                    pred_row = pred_row.iloc[0]
+                    pred_row = pred_row_filtered.iloc[0]
                     zones.append(pred_row['zone'])
                     thresholds.append(pred_row['thresholds'])
                     operators.append(pred_row['operator'])

@@ -145,11 +145,11 @@ from deap import creator, base, tools, algorithms
 import random
 
 # Lista de sementes para múltiplas execuções
-rseed_list = [0, 42]
+rseed_list = [0, 1]
 
-pop_size = 200 # population size
-num_generations = 100 # number of generations
-crossover_prob = 0.7 # crossover probability
+pop_size = 60 # population size
+num_generations = 20 # number of generations
+crossover_prob = 0.6 # crossover probability
 mutation_prob = 0.1 # mutation probability
 
 creator.create("FitnessMax", base.Fitness, weights=(1.0,)) # fitness function to be maximized
@@ -170,7 +170,7 @@ toolbox.register("attr_nbags", random.randint, 20, 150) # number of bags between
 toolbox.register("attr_n_samples_per_bag_frac", random.uniform, 0.5, 0.9) # fraction between 0.5 and 0.9
 
 # minimum number of samples per predicate as a fraction of the total samples
-toolbox.register("attr_min_samples_per_predicate_frac", random.uniform, 0.2, 0.6) # fraction between 0.2 and 0.4
+toolbox.register("attr_min_samples_per_predicate_frac", random.uniform, 0.05, 0.3) # fraction between 0.2 and 0.4
 
 # if replacement is used when sampling
 toolbox.register("attr_replacement", lambda: random.choice([True, False]))
@@ -197,23 +197,23 @@ toolbox.register("mate", tools.cxUniform, indpb=0.5) # uniform crossover
 # mutation operator
 def mutate_individual(individual):
     # Mutate agregate_function
-    if random.random() < 0.25:
+    if random.random() < 0.10:
         individual[0] = random.choice(['sum', 'median', 'max'])
     
     # Mutate nbags
-    if random.random() < 0.25:
+    if random.random() < 0.10:
         individual[1] = random.randint(20, 150)
     
     # Mutate n_samples_per_bag
-    if random.random() < 0.25:
+    if random.random() < 0.10:
         individual[2] = random.uniform(0.5, 0.9)
     
     # Mutate min_samples_per_predicate
-    if random.random() < 0.25:
-        individual[3] = random.uniform(0.05, 0.4)
+    if random.random() < 0.10:
+        individual[3] = random.uniform(0.05, 0.3)
     
     # Mutate replacement
-    if random.random() < 0.25:
+    if random.random() < 0.10:
         individual[4] = random.choice([True, False])
     
     # Mutate bagging_on_predicates
@@ -237,6 +237,12 @@ def RBO_evaluate(individual):
         min_samples_per_predicate_frac = individual[3] # fraction of minimum samples per predicate
         replacement = individual[4] # boolean for replacement
         #bagging_on_predicates = individual[5] # boolean for bagging on predicates
+
+        print(f"Evaluating Individual with Parameters: agg={agregate_function}, nbags={nbags}, "
+              f"sample_frac={n_samples_per_bag_frac:.2f}, predicate_frac={min_samples_per_predicate_frac:.2f}, "
+              f"replace={replacement}")
+              #f"replace={replacement}, bag_preds={bagging_on_predicates}")
+        print("-" * 80)
 
         spectral_zones_class = exp.extract_spectral_zones(Xcalclass, spectral_cuts)
         zone_sums_df = exp.aggregate_spectral_zones(spectral_zones_class, aggregator=agregate_function)
@@ -285,6 +291,11 @@ def RBO_evaluate(individual):
             show_details=False
         )
 
+        # Validar grafo antes de calcular métricas
+        if len(DG.nodes()) == 0 or len(DG.edges()) == 0:
+            print(f"AVISO: Grafo vazio gerado. Retornando RBO: 0.0")
+            return (0.0,)
+
         # Calcular LRC
         import networkx as nx
         
@@ -325,16 +336,23 @@ def RBO_evaluate(individual):
         vip_list = vip_scores_unique_df['Zone'].tolist()
         lrc_list = lrc_unique_df['Zone'].tolist()
         rbo_score = rbo.RankingSimilarity(vip_list, lrc_list).rbo(p=0.7, k=10)
-        
+        print(f"RBO Score: {rbo_score:.4f} | Parâmetros: agg={agregate_function}, nbags={nbags}, "
+              f"sample_frac={n_samples_per_bag_frac:.2f}, predicate_frac={min_samples_per_predicate_frac:.2f}, "
+              f"replace={replacement}")
+              #f"replace={replacement}, bag_preds={bagging_on_predicates}")
+        print("=" * 80)
+
         return (rbo_score,)
     
     except Exception as err:
         # Em caso de erro, retornar fitness 0 e imprimir o erro
-        print(f"ERRO na avaliação: {str(err)}")
-        print(f"Parâmetros: agg={individual[0]}, nbags={individual[1]}, "
+        print(f"ERRO: {str(err)}")
+        print(f"RBO Score: 0.0 | Parâmetros: agg={individual[0]}, nbags={individual[1]}, "
               f"sample_frac={individual[2]:.2f}, predicate_frac={individual[3]:.2f}, "
               f"replace={individual[4]}")
               #f"replace={individual[4]}, bag_preds={individual[5]}")
+        print("=" * 80)
+
         return (0.0,)
 
 # registrando a função de avaliação no toolbox
