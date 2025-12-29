@@ -225,7 +225,7 @@ def mutate_individual(individual):
 toolbox.register("mutate", mutate_individual)
 
 # selection operator
-toolbox.register("select", tools.selTournament, tournsize=5)
+toolbox.register("select", tools.selTournament, tournsize=10)
 
 # fitness evaluation function
 def RBO_evaluate(individual):
