@@ -12,6 +12,7 @@ kennard-stone
 jupyter
 ipython
 deap>=1.3.1
+rbo
 
 # Optional / useful tools
 # seaborn  # visualization helper (optional)
