@@ -189,6 +189,18 @@ def predicates_by_quantiles(zone_sums_df, quantiles):
     
     predicates_df = pd.DataFrame(zone_predicate_list)
     
+    # Removing duplicate predicates based on 'rule' column
+    # Some zones may have the same quantile values, creating duplicate rules
+    initial_count = len(predicates_df)
+    predicates_df = predicates_df.drop_duplicates(subset=['rule'], keep='first').reset_index(drop=True)
+    final_count = len(predicates_df)
+    
+    if initial_count != final_count:
+        print(f"Removed {initial_count - final_count} duplicate predicates. Remaining: {final_count}")
+    
+    # Renumbering predicates after removing duplicates
+    predicates_df['predicate'] = [f'P{i+1}' for i in range(len(predicates_df))]
+
     # Generating the predicate indicator DataFrame
     
     # function to evaluate a predicate for a given value
