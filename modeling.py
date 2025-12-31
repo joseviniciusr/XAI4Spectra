@@ -220,7 +220,7 @@ def pls_optimized(Xcal, ycal, LVmax, Xpred=None, ypred=None, aim='regression', c
         df_results = pd.DataFrame(results)
         calres.insert(0, 'Ref', np.array(ycal))
         if predres is not None:
-            predres.insert(0, 'Ref', np.array(ypred))
+            predres.insert(0, 'Ref', np.array(ypred))    
 
     elif aim == 'classification': # classification (PLS-DA)
         from sklearn.cross_decomposition import PLSRegression
@@ -340,4 +340,7 @@ def pls_optimized(Xcal, ycal, LVmax, Xpred=None, ypred=None, aim='regression', c
     else:
         raise ValueError("Parameter `aim` must be 'regression' or 'classification'.")
 
-    return df_results, calres, predres, model, vip, calres_numeric, predres_numeric
+    if aim == 'classification':
+        return df_results, calres, predres, model, vip, calres_numeric, predres_numeric
+    else:
+        return df_results, calres, predres, model, vip
