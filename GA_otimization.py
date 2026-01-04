@@ -145,10 +145,10 @@ from deap import creator, base, tools, algorithms
 import random
 
 # Lista de sementes para múltiplas execuções
-rseed_list = [0, 1]
+rseed_list = [0, 1, 42]
 
-pop_size = 60 # population size
-num_generations = 20 # number of generations
+pop_size = 200 # population size
+num_generations = 50 # number of generations
 crossover_prob = 0.6 # crossover probability
 mutation_prob = 0.1 # mutation probability
 
@@ -162,6 +162,9 @@ toolbox = base.Toolbox()
 
 # agregate function to be used in SMeX
 toolbox.register("attr_agregate_function", lambda: random.choice(['sum', 'median', 'max']))
+
+# metric to be used in SMeX
+toolbox.register("attr_metric", lambda: random.choice(['mutual_info', 'covariance']))
 
 # number of bags
 toolbox.register("attr_nbags", random.randint, 20, 150) # number of bags between 20 and 150
@@ -181,6 +184,7 @@ toolbox.register("attr_replacement", lambda: random.choice([True, False]))
 # creating an individual by combining all attributes
 toolbox.register("individual", tools.initCycle, creator.Individual,
                     (toolbox.attr_agregate_function,
+                    toolbox.attr_metric,
                     toolbox.attr_nbags,
                     toolbox.attr_n_samples_per_bag_frac,
                     toolbox.attr_min_samples_per_predicate_frac,
@@ -199,22 +203,26 @@ def mutate_individual(individual):
     # Mutate agregate_function
     if random.random() < 0.10:
         individual[0] = random.choice(['sum', 'median', 'max'])
+
+    # Mutate metric
+    if random.random() < 0.10:
+        individual[1] = random.choice(['mutual_info', 'covariance'])    
     
     # Mutate nbags
     if random.random() < 0.10:
-        individual[1] = random.randint(20, 150)
+        individual[2] = random.randint(20, 150)
     
     # Mutate n_samples_per_bag
     if random.random() < 0.10:
-        individual[2] = random.uniform(0.5, 0.9)
+        individual[3] = random.uniform(0.5, 0.9)
     
     # Mutate min_samples_per_predicate
     if random.random() < 0.10:
-        individual[3] = random.uniform(0.05, 0.3)
+        individual[4] = random.uniform(0.05, 0.3)
     
     # Mutate replacement
     if random.random() < 0.10:
-        individual[4] = random.choice([True, False])
+        individual[5] = random.choice([True, False])
     
     # Mutate bagging_on_predicates
     # if random.random() < 0.25:
@@ -232,13 +240,14 @@ def RBO_evaluate(individual):
     try:
         # extracting individual parameters
         agregate_function = individual[0] # 'sum', 'median', or 'max'
-        nbags = individual[1] # integer number of bags
-        n_samples_per_bag_frac = individual[2] # fraction of samples per bag
-        min_samples_per_predicate_frac = individual[3] # fraction of minimum samples per predicate
-        replacement = individual[4] # boolean for replacement
+        metric = individual[1] # 'mutual_info' or 'covariance'
+        nbags = individual[2] # integer number of bags
+        n_samples_per_bag_frac = individual[3] # fraction of samples per bag
+        min_samples_per_predicate_frac = individual[4] # fraction of minimum samples per predicate
+        replacement = individual[5] # boolean for replacement
         #bagging_on_predicates = individual[5] # boolean for bagging on predicates
 
-        print(f"Evaluating Individual with Parameters: agg={agregate_function}, nbags={nbags}, "
+        print(f"Evaluating Individual with Parameters: agg={agregate_function}, metric={metric}, nbags={nbags}, "
               f"sample_frac={n_samples_per_bag_frac:.2f}, predicate_frac={min_samples_per_predicate_frac:.2f}, "
               f"replace={replacement}")
               #f"replace={replacement}, bag_preds={bagging_on_predicates}")
@@ -276,8 +285,8 @@ def RBO_evaluate(individual):
         # Calcular MI
         mi_results_dict_seed = exp.calculate_predicate_metrics(
             bags_result=bags_result,
-            metric='mutual_info',
-            threshold=0.1,
+            metric=metric,
+            threshold=0.001,
             n_neighbors=5
         )
         
@@ -336,7 +345,7 @@ def RBO_evaluate(individual):
         vip_list = vip_scores_unique_df['Zone'].tolist()
         lrc_list = lrc_unique_df['Zone'].tolist()
         rbo_score = rbo.RankingSimilarity(vip_list, lrc_list).rbo(p=0.7, k=10)
-        print(f"RBO Score: {rbo_score:.4f} | Parâmetros: agg={agregate_function}, nbags={nbags}, "
+        print(f"RBO Score: {rbo_score:.4f} | Parâmetros: agg={agregate_function}, metric={metric}, nbags={nbags}, "
               f"sample_frac={n_samples_per_bag_frac:.2f}, predicate_frac={min_samples_per_predicate_frac:.2f}, "
               f"replace={replacement}")
               #f"replace={replacement}, bag_preds={bagging_on_predicates}")
@@ -347,9 +356,9 @@ def RBO_evaluate(individual):
     except Exception as err:
         # Em caso de erro, retornar fitness 0 e imprimir o erro
         print(f"ERRO: {str(err)}")
-        print(f"RBO Score: 0.0 | Parâmetros: agg={individual[0]}, nbags={individual[1]}, "
-              f"sample_frac={individual[2]:.2f}, predicate_frac={individual[3]:.2f}, "
-              f"replace={individual[4]}")
+        print(f"RBO Score: 0.0 | Parâmetros: agg={individual[0]}, metric={individual[1]}, nbags={individual[2]}, "
+              f"sample_frac={individual[3]:.2f}, predicate_frac={individual[4]:.2f}, "
+              f"replace={individual[5]}")
               #f"replace={individual[4]}, bag_preds={individual[5]}")
         print("=" * 80)
 
@@ -408,10 +417,11 @@ for rseed in rseed_list:
         print(f"   Fitness (RBO Score): {individual.fitness.values[0]:.4f}")
         print(f"   Parâmetros:")
         print(f"      • Agregador: {individual[0]}")
-        print(f"      • N° Bags: {individual[1]}")
-        print(f"      • Fração amostras/bag: {individual[2]:.2f}")
-        print(f"      • Fração min amostras/predicado: {individual[3]:.2f}")
-        print(f"      • Replacement: {individual[4]}")
+        print(f"      • Métrica: {individual[1]}")
+        print(f"      • N° Bags: {individual[2]}")
+        print(f"      • Fração amostras/bag: {individual[3]:.2f}")
+        print(f"      • Fração min amostras/predicado: {individual[4]:.2f}")
+        print(f"      • Replacement: {individual[5]}")
         #print(f"      • Bagging em predicados: {individual[5]}")
     
     # convertendo o hall_of_fame desta semente em um DataFrame
@@ -420,10 +430,11 @@ for rseed in rseed_list:
         'Rank': i+1,
         'Fitness_RBO_Score': individual.fitness.values[0],
         'Agregador': individual[0],
-        'N_Bags': individual[1],
-        'Frac_Samples_per_Bag': individual[2],
-        'Frac_Min_Samples_per_Predicate': individual[3],
-        'Replacement': individual[4]
+        'Métrica': individual[1],
+        'N_Bags': individual[2],
+        'Frac_Samples_per_Bag': individual[3],
+        'Frac_Min_Samples_per_Predicate': individual[4],
+        'Replacement': individual[5]
     } for i, individual in enumerate(hall_of_fame)])
     all_hof_dfs.append(hof_df)
     
