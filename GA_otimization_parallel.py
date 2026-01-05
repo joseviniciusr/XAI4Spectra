@@ -78,7 +78,7 @@ N_PROCESSES = 36  # Using all 36 cores
 ################################## DATA LOADING, PREPROCESSING, AND MODELING ################################################################################################################
 
 # selecting the dataset to be used
-dataset_target = 'soil'  # selecting the dataset to be used
+dataset_target = 'bank_notes'  # selecting the dataset to be used
 
 # loading a soil spectral dataset based on X-ray fluorescence (XRF)
 data_complete = pd.read_csv(f'XRF_databases/{dataset_target}/plsda/{dataset_target}.csv', sep=';') 
