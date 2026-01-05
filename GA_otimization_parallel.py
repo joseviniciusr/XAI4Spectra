@@ -1,4 +1,5 @@
 # Genetic Algorithm (GA) optimization for internal parameters of SMeX incorporating PLS-DA models with XRF spectral libraries
+# PARALLEL VERSION - Uses multiprocessing for parallel evaluation of individuals
 
 import numpy as np
 import pandas as pd
@@ -6,6 +7,7 @@ from modeling import pls_optimized
 import explaining as exp
 import preprocessings as prepr
 import kennard_stone as ks
+import multiprocessing
 
 # Instructions dictionary containing dataset-specific parameters
 instructions = {
@@ -69,6 +71,9 @@ instructions = {
         }
     }
 }
+
+# Number of parallel processes (adjust according to your server)
+N_PROCESSES = 36  # Using all 36 cores
 
 ################################## DATA LOADING, PREPROCESSING, AND MODELING ################################################################################################################
 
@@ -237,6 +242,9 @@ toolbox.register("select", tools.selTournament, tournsize=10)
 
 # fitness evaluation function
 def RBO_evaluate(individual):
+    # Import rseed from global scope (will be set before each GA run)
+    global rseed
+    
     try:
         # extracting individual parameters
         agregate_function = individual[0] # 'sum', 'median', or 'max'
@@ -367,84 +375,99 @@ def RBO_evaluate(individual):
 # registrando a função de avaliação no toolbox
 toolbox.register("evaluate", RBO_evaluate)
 
-# Listas para acumular resultados de todas as sementes
-all_hof_dfs = []
-all_statistics_dfs = []
+# Variável global para a semente (será atualizada no loop principal)
+rseed = None
 
-# Loop sobre múltiplas sementes
-for rseed in rseed_list:
-    print(f"\n{'#'*80}")
-    print(f"EXECUTANDO GA COM SEMENTE: {rseed}")
-    print(f"{'#'*80}\n")
+if __name__ == "__main__":
+    # Configurar pool de processos para paralelização
+    pool = multiprocessing.Pool(processes=N_PROCESSES)
+    toolbox.register("map", pool.map)
     
-    random.seed(rseed) # setting random seed for reproducibility
-    
-    # setting up statistics to be recorded and hall of fame
-    statistics = tools.Statistics(lambda ind: ind.fitness.values)
-    statistics.register("mean", np.mean)
-    statistics.register("std", np.std)
-    statistics.register("var", np.var)
-    statistics.register("min", np.min)
-    statistics.register("max", np.max)
-    
-    hall_of_fame = tools.HallOfFame(20) # keeping the top 5 individuals
-    
-    # criando a população inicial
-    population = toolbox.population(n=pop_size)
-    
-    # excecutando a busca evolutiva via algoritmo genético
-    print(f"Início do Processo Evolutivo (Pop: {pop_size}, Gens: {num_generations}) ---")
+    print(f"Paralelização ativada com {N_PROCESSES} processos")
     print("=" * 80)
     
-    pop, log = algorithms.eaSimple(population,
-                                   toolbox,
-                                   cxpb=crossover_prob,
-                                   mutpb=mutation_prob,
-                                   ngen=num_generations,
-                                   stats=statistics,
-                                   halloffame=hall_of_fame,
-                                   verbose=True)
-    
-    print("=" * 80)
-    print("Fim da Evolução\n")
-    
-    # interpretando os resultados
-    print("="*80)
-    print("MELHORES INDIVÍDUOS ENCONTRADOS:")
-    print("="*80)
-    for i, individual in enumerate(hall_of_fame):
-        print(f"\n Ranking #{i+1}")
-        print(f"   Fitness (RBO Score): {individual.fitness.values[0]:.4f}")
-        print(f"   Parâmetros:")
-        print(f"      • Agregador: {individual[0]}")
-        print(f"      • Métrica: {individual[1]}")
-        print(f"      • N° Bags: {individual[2]}")
-        print(f"      • Fração amostras/bag: {individual[3]:.2f}")
-        print(f"      • Fração min amostras/predicado: {individual[4]:.2f}")
-        print(f"      • Replacement: {individual[5]}")
-        #print(f"      • Bagging em predicados: {individual[5]}")
-    
-    # convertendo o hall_of_fame desta semente em um DataFrame
-    hof_df = pd.DataFrame([{
-        'Seed' : rseed,
-        'Rank': i+1,
-        'Fitness_RBO_Score': individual.fitness.values[0],
-        'Agregador': individual[0],
-        'Métrica': individual[1],
-        'N_Bags': individual[2],
-        'Frac_Samples_per_Bag': individual[3],
-        'Frac_Min_Samples_per_Predicate': individual[4],
-        'Replacement': individual[5]
-    } for i, individual in enumerate(hall_of_fame)])
-    all_hof_dfs.append(hof_df)
-    
-    # salvando as estatísticas do processo evolutivo desta semente
-    statistics_df = pd.DataFrame(log)
-    statistics_df['Seed'] = rseed
-    all_statistics_dfs.append(statistics_df)
+    # Listas para acumular resultados de todas as sementes
+    all_hof_dfs = []
+    all_statistics_dfs = []
 
-# Concatenar todos os resultados e salvar
-final_hof_df = pd.concat(all_hof_dfs, ignore_index=True)
-final_hof_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_hof.csv', index=False, sep=';')
-final_statistics_df = pd.concat(all_statistics_dfs, ignore_index=True)
-final_statistics_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_statistics.csv', index=False, sep=';')
+    # Loop sobre múltiplas sementes
+    for rseed in rseed_list:
+        print(f"\n{'#'*80}")
+        print(f"EXECUTANDO GA COM SEMENTE: {rseed}")
+        print(f"{'#'*80}\n")
+        
+        random.seed(rseed) # setting random seed for reproducibility
+        
+        # setting up statistics to be recorded and hall of fame
+        statistics = tools.Statistics(lambda ind: ind.fitness.values)
+        statistics.register("mean", np.mean)
+        statistics.register("std", np.std)
+        statistics.register("var", np.var)
+        statistics.register("min", np.min)
+        statistics.register("max", np.max)
+        
+        hall_of_fame = tools.HallOfFame(20) # keeping the top 5 individuals
+        
+        # criando a população inicial
+        population = toolbox.population(n=pop_size)
+        
+        # excecutando a busca evolutiva via algoritmo genético
+        print(f"Início do Processo Evolutivo (Pop: {pop_size}, Gens: {num_generations}) ---")
+        print("=" * 80)
+        
+        pop, log = algorithms.eaSimple(population,
+                                       toolbox,
+                                       cxpb=crossover_prob,
+                                       mutpb=mutation_prob,
+                                       ngen=num_generations,
+                                       stats=statistics,
+                                       halloffame=hall_of_fame,
+                                       verbose=True)
+        
+        print("=" * 80)
+        print("Fim da Evolução\n")
+        
+        # interpretando os resultados
+        print("="*80)
+        print("MELHORES INDIVÍDUOS ENCONTRADOS:")
+        print("="*80)
+        for i, individual in enumerate(hall_of_fame):
+            print(f"\n Ranking #{i+1}")
+            print(f"   Fitness (RBO Score): {individual.fitness.values[0]:.4f}")
+            print(f"   Parâmetros:")
+            print(f"      • Agregador: {individual[0]}")
+            print(f"      • Métrica: {individual[1]}")
+            print(f"      • N° Bags: {individual[2]}")
+            print(f"      • Fração amostras/bag: {individual[3]:.2f}")
+            print(f"      • Fração min amostras/predicado: {individual[4]:.2f}")
+            print(f"      • Replacement: {individual[5]}")
+            #print(f"      • Bagging em predicados: {individual[5]}")
+        
+        # convertendo o hall_of_fame desta semente em um DataFrame
+        hof_df = pd.DataFrame([{
+            'Seed' : rseed,
+            'Rank': i+1,
+            'Fitness_RBO_Score': individual.fitness.values[0],
+            'Agregador': individual[0],
+            'Métrica': individual[1],
+            'N_Bags': individual[2],
+            'Frac_Samples_per_Bag': individual[3],
+            'Frac_Min_Samples_per_Predicate': individual[4],
+            'Replacement': individual[5]
+        } for i, individual in enumerate(hall_of_fame)])
+        all_hof_dfs.append(hof_df)
+        
+        # salvando as estatísticas do processo evolutivo desta semente
+        statistics_df = pd.DataFrame(log)
+        statistics_df['Seed'] = rseed
+        all_statistics_dfs.append(statistics_df)
+
+    # Fechar o pool de processos
+    pool.close()
+    pool.join()
+
+    # Concatenar todos os resultados e salvar
+    final_hof_df = pd.concat(all_hof_dfs, ignore_index=True)
+    final_hof_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_hof.csv', index=False, sep=';')
+    final_statistics_df = pd.concat(all_statistics_dfs, ignore_index=True)
+    final_statistics_df.to_csv(f'XRF_databases/{dataset_target}/plsda/smeX_ga_optimization_statistics.csv', index=False, sep=';')
