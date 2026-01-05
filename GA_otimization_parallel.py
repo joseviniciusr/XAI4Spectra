@@ -78,7 +78,7 @@ N_PROCESSES = 36  # Using all 36 cores
 ################################## DATA LOADING, PREPROCESSING, AND MODELING ################################################################################################################
 
 # selecting the dataset to be used
-dataset_target = 'bank_notes'  # selecting the dataset to be used
+dataset_target = 'soil'  # selecting the dataset to be used
 
 # loading a soil spectral dataset based on X-ray fluorescence (XRF)
 data_complete = pd.read_csv(f'XRF_databases/{dataset_target}/plsda/{dataset_target}.csv', sep=';') 
@@ -155,7 +155,7 @@ rseed_list = [0, 1, 42]
 pop_size = 200 # population size
 num_generations = 50 # number of generations
 crossover_prob = 0.6 # crossover probability
-mutation_prob = 0.1 # mutation probability
+mutation_prob = 0.2 # mutation probability
 
 creator.create("FitnessMax", base.Fitness, weights=(1.0,)) # fitness function to be maximized
 creator.create("Individual", list, fitness=creator.FitnessMax) # individual representation
@@ -172,7 +172,7 @@ toolbox.register("attr_agregate_function", lambda: random.choice(['sum', 'median
 toolbox.register("attr_metric", lambda: random.choice(['mutual_info', 'covariance']))
 
 # number of bags
-toolbox.register("attr_nbags", random.randint, 20, 150) # number of bags between 20 and 150
+toolbox.register("attr_nbags", random.randint, 20, 200) # number of bags between 20 and 150
 
 # number of samples per bag as a fraction of the total samples
 toolbox.register("attr_n_samples_per_bag_frac", random.uniform, 0.5, 0.9) # fraction between 0.5 and 0.9
@@ -201,32 +201,32 @@ toolbox.register("individual", tools.initCycle, creator.Individual,
 toolbox.register("population", tools.initRepeat, list, toolbox.individual)
 
 # crossover genetic operator
-toolbox.register("mate", tools.cxUniform, indpb=0.5) # uniform crossover
+toolbox.register("mate", tools.cxUniform, indpb=0.6) # uniform crossover
 
 # mutation operator
 def mutate_individual(individual):
     # Mutate agregate_function
-    if random.random() < 0.10:
+    if random.random() < 0.2:
         individual[0] = random.choice(['sum', 'median', 'max'])
 
     # Mutate metric
-    if random.random() < 0.10:
+    if random.random() < 0.2:
         individual[1] = random.choice(['mutual_info', 'covariance'])    
     
     # Mutate nbags
-    if random.random() < 0.10:
+    if random.random() < 0.2:
         individual[2] = random.randint(20, 150)
     
     # Mutate n_samples_per_bag
-    if random.random() < 0.10:
+    if random.random() < 0.2:
         individual[3] = random.uniform(0.5, 0.9)
     
     # Mutate min_samples_per_predicate
-    if random.random() < 0.10:
+    if random.random() < 0.2:
         individual[4] = random.uniform(0.05, 0.3)
     
     # Mutate replacement
-    if random.random() < 0.10:
+    if random.random() < 0.2:
         individual[5] = random.choice([True, False])
     
     # Mutate bagging_on_predicates
