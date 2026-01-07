@@ -449,7 +449,7 @@ if __name__ == "__main__":
             'Rank': i+1,
             'Fitness_RBO_Score': individual.fitness.values[0],
             'Agregador': individual[0],
-            'Métrica': individual[1],
+            'Metric': individual[1],
             'N_Bags': individual[2],
             'Frac_Samples_per_Bag': individual[3],
             'Frac_Min_Samples_per_Predicate': individual[4],
