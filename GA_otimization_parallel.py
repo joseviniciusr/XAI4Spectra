@@ -68,17 +68,44 @@ instructions = {
                 ('background5', 22.74, 24.52),
                 ('Ti ka', 24.55, 26.07)
             ]
+        },
+        'ecigar': {
+            'spectral_range': ['0.997','20.007'],
+            'LV': 3,
+            'spectral_cuts': [
+                ('Si', 0.997, 1.920),
+                ('background1', 1.930, 2.413),
+                ('Cl', 2.413, 2.984),
+                ('background2', 2.984, 3.134),
+                ('K', 3.134, 3.479),
+                ('Ca', 3.479, 3.839),
+                ('Fe ka', 6.161, 6.732),
+                ('Fe kb', 6.732, 7.242),
+                ('Ni', 7.242, 7.712),
+                ('Cu', 7.712, 8.348),
+                ('Zn ka', 8.348, 8.963),
+                ('Ga', 8.963, 9.414),
+                ('Zn kb', 9.414, 9.739),
+                ('background3', 9.739, 10.379),
+                ('Pb La', 10.379, 10.725),
+                ('background4', 10.725, 12.391),
+                ('Pb Lb', 12.391, 12.831),
+                ('background5', 12.831, 15.333),
+                ('Mo compton scattering', 15.333, 17.215),
+                ('Mo rayleigh scattering', 17.215, 17.765),
+                ('background6', 17.765, 20.007)
+                ]
         }
     }
 }
 
 # Number of parallel processes (adjust according to your server)
-N_PROCESSES = 36  # Using all 36 cores
+N_PROCESSES = 15  # Using all 36 cores
 
 ################################## DATA LOADING, PREPROCESSING, AND MODELING ################################################################################################################
 
 # selecting the dataset to be used
-dataset_target = 'soil'  # selecting the dataset to be used
+dataset_target = 'ecigar'  # selecting the dataset to be used
 
 # loading a soil spectral dataset based on X-ray fluorescence (XRF)
 data_complete = pd.read_csv(f'XRF_databases/{dataset_target}/plsda/{dataset_target}.csv', sep=';') 
