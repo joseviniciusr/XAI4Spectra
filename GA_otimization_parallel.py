@@ -94,18 +94,49 @@ instructions = {
                 ('Mo compton scattering', 15.333, 17.215),
                 ('Mo rayleigh scattering', 17.215, 17.765),
                 ('background6', 17.765, 20.007)
-                ]
-        }
+            ]
+        },
+        'soil_types': {
+            'spectral_range': ['1', '15'],
+            'LV': 2,
+            'spectral_cuts': [
+                ('background1', 1.0, 1.33),
+                ('Al', 1.34, 1.63),
+                ('Si', 1.64, 1.86),
+                ('P', 1.87, 2.19),
+                ('S', 2.20, 2.44),
+                ('background2', 2.45, 2.55),
+                ('Rh L + Ar', 2.56, 3.21),
+                ('K', 3.22, 3.53),
+                ('Ca ka', 3.54, 3.84),
+                ('Ca kb', 3.86, 4.14),
+                ('background3', 4.15, 4.37),
+                ('Ti ka', 4.38, 4.66),
+                ('background4', 4.67, 4.75),
+                ('Ti kb', 4.76, 5.12),
+                ('Cr', 5.13, 5.77),
+                ('Mn', 5.78, 6.13),
+                ('Fe ka', 6.14, 6.80),
+                ('Fe kb', 6.81, 7.30),
+                ('background5', 7.31, 7.91),
+                ('Cu', 7.92, 8.20),
+                ('background6', 8.21, 10.69),
+                ('Fe ka + Ti ka', 10.7, 11.14),
+                ('background7', 11.15, 12.55),
+                ('sum Fe' , 12.56, 13.1),
+                ('background8', 13.11, 15.0)
+            ]
+        }    
     }
 }
 
 # Number of parallel processes (adjust according to your server)
-N_PROCESSES = 15  # Using all 36 cores
+N_PROCESSES = 20  # Using all 36 cores
 
 ################################## DATA LOADING, PREPROCESSING, AND MODELING ################################################################################################################
 
 # selecting the dataset to be used
-dataset_target = 'ecigar'  # selecting the dataset to be used
+dataset_target = 'soil_types'  # selecting the dataset to be used
 
 # loading a soil spectral dataset based on X-ray fluorescence (XRF)
 data_complete = pd.read_csv(f'XRF_databases/{dataset_target}/plsda/{dataset_target}.csv', sep=';') 
