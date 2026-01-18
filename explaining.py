@@ -1727,3 +1727,112 @@ def build_fold_predicate_graph(bags_result, mi_results_dict, predicates_df,
     print(f"  Nós terminais: {len([n for n, attr in DG.nodes(data=True) if attr.get('node_type') == 'terminal'])}")
     
     return DG
+
+def calculate_predicate_ranking_mean(mi_results_dict, return_unique_zones=False):
+    """
+    Calcula ranking agregado de predicados baseado na posição média em múltiplos rankings.
+    
+    Parâmetros:
+    -----------
+    mi_results_dict : dict
+        Dicionário onde cada chave é um fold/bag e cada valor é um DataFrame contendo
+        uma coluna 'Predicate' com os predicados ordenados por importância.
+    return_unique_zones : bool, default=False
+        Se True, retorna também um DataFrame com apenas a primeira ocorrência de cada zona espectral.
+        
+    Retorna:
+    --------
+    ranking_predicate_mean : pd.DataFrame
+        DataFrame com colunas:
+        - Predicate: Nome completo do predicado
+        - Mean_Score: Score médio baseado nas posições nos rankings
+        - Count: Número de vezes que o predicado aparece nos rankings
+        - Zone: Zona espectral extraída do predicado
+        - Rule: Operador da regra ('>' ou '<=')
+        - Threshold: Valor do limiar da regra
+        
+    ranking_predicate_mean_unique : pd.DataFrame (opcional)
+        Retornado apenas se return_unique_zones=True. Contém apenas a primeira
+        ocorrência de cada zona espectral (maior Mean_Score).
+        
+    Exemplo:
+    --------
+    >>> ranking_df = calculate_predicate_ranking_mean(mi_results_dict)
+    >>> ranking_df, ranking_unique_df = calculate_predicate_ranking_mean(mi_results_dict, return_unique_zones=True)
+    """
+    import pandas as pd
+    import numpy as np
+    
+    # Criar DataFrame padronizado para todos os rankings
+    max_len = max(len(mi_df['Predicate']) for mi_df in mi_results_dict.values())
+    padded_dict = {
+        f'Predicate_{fold}': list(mi_df['Predicate']) + [None]*(max_len - len(mi_df['Predicate']))
+        for fold, mi_df in mi_results_dict.items()
+    }
+    all_results = pd.DataFrame(padded_dict)
+    
+    # Calculando scores baseados na posição no ranking
+    predicate_scores = {}
+    
+    for col in all_results.columns:
+        # Pegar valores não nulos da coluna
+        non_null_predicates = all_results[col].dropna()
+        k = len(non_null_predicates)
+        
+        # Atribuir scores: primeiro = k, segundo = k-1, ..., último = 1
+        for idx, predicate in enumerate(non_null_predicates):
+            score = k - idx
+            if predicate not in predicate_scores:
+                predicate_scores[predicate] = []
+            predicate_scores[predicate].append(score)
+    
+    # Calcular score médio para cada predicado
+    ranking_data = []
+    for predicate, scores in predicate_scores.items():
+        mean_score = np.mean(scores)
+        ranking_data.append({
+            'Predicate': predicate,
+            'Mean_Score': mean_score,
+            'Count': len(scores)  # Número de vezes que o predicado aparece nos rankings
+        })
+    
+    # Criar dataframe e ordenar por score médio (decrescente)
+    ranking_predicate_mean = pd.DataFrame(ranking_data)
+    ranking_predicate_mean = ranking_predicate_mean.sort_values(by='Mean_Score', ascending=False).reset_index(drop=True)
+    
+    # Função auxiliar para parsing de predicados
+    def parse_predicate(predicate_str):
+        """
+        Extrai zona, operador e threshold de um predicado.
+        Formato esperado: 'Zone_name > threshold' ou 'Zone_name <= threshold'
+        """
+        if '>' in predicate_str:
+            parts = predicate_str.split('>')
+            zone = parts[0].strip()
+            threshold = float(parts[1].strip())
+            rule = '>'
+        elif '<=' in predicate_str:
+            parts = predicate_str.split('<=')
+            zone = parts[0].strip()
+            threshold = float(parts[1].strip())
+            rule = '<='
+        else:
+            # Caso não encontre operador conhecido
+            zone = predicate_str
+            threshold = None
+            rule = None
+        return zone, rule, threshold
+    
+    # Aplicar parsing e criar novas colunas
+    ranking_predicate_mean[['Zone', 'Rule', 'Threshold']] = ranking_predicate_mean['Predicate'].apply(
+        lambda x: pd.Series(parse_predicate(x))
+    )
+    
+    if return_unique_zones:
+        # Selecionar apenas zonas espectrais únicas (primeira ocorrência = maior score)
+        ranking_predicate_mean_unique = ranking_predicate_mean.drop_duplicates(
+            subset=['Zone'], keep='first'
+        ).reset_index(drop=True)
+        return ranking_predicate_mean, ranking_predicate_mean_unique
+    
+    return ranking_predicate_mean
