@@ -80,8 +80,11 @@ def aggregate_spectral_zones(spectral_zones_dict, aggregator='sum'):
         - **'mean'**: Média aritmética dos valores
         - **'median'**: Mediana dos valores
         - **'max'**: Valor máximo na zona
+        - **'min'**: Valor mínimo na zona
         - **'std'**: Desvio padrão dos valores
         - **'var'**: Variância dos valores
+        - **'extreme'**: Valor de maior magnitude (mais intenso) na zona, ou seja,
+          escolhe o valor com maior valor absoluto em cada amostra (pode ser positivo ou negativo)
     
     Returns
     -------
@@ -100,7 +103,7 @@ def aggregate_spectral_zones(spectral_zones_dict, aggregator='sum'):
     import numpy as np
     
     # VALIDAÇÃO DE ENTRADA
-    valid_aggregators = ['sum', 'mean', 'median', 'max', 'min', 'std', 'var']
+    valid_aggregators = ['sum', 'mean', 'median', 'max', 'min', 'std', 'var', 'extreme']
     
     if aggregator not in valid_aggregators:
         raise ValueError(
@@ -118,6 +121,11 @@ def aggregate_spectral_zones(spectral_zones_dict, aggregator='sum'):
         'min': lambda df: df.min(axis=1),        # valor mínimo
         'std': lambda df: df.std(axis=1),        # desvio padrão
         'var': lambda df: df.var(axis=1),        # variância
+        # 'extreme': escolhe o valor com maior magnitude (abs), preservando o sinal
+        'extreme': lambda df: df.apply(
+            lambda row: (row.loc[row.abs().idxmax()] if row.notna().any() else np.nan),
+            axis=1
+        ),
     }
     
     # AGREGAÇÃO DAS ZONAS ESPECTRAIS
@@ -133,7 +141,7 @@ def aggregate_spectral_zones(spectral_zones_dict, aggregator='sum'):
     
     # CONSTRUÇÃO DO DATAFRAME FINAL
     # Cada chave vira uma coluna, preservando os índices originais
-    aggregated_df = pd.DataFrame(aggregated_dict)    
+        aggregated_df = pd.DataFrame(aggregated_dict)    
     return aggregated_df
 
 def predicates_by_quantiles(zone_sums_df, quantiles):
@@ -672,9 +680,7 @@ def calculate_predicate_metrics(bags_result, metric='mutual_info', threshold=0.1
     total_predicates_processed = 0
     total_predicates_filtered = 0
     
-    print(f"\n{'='*70}")
     print(f"Calculando {metric_name} para Predicados")
-    print(f"{'='*70}")
     print(f"Métrica: {metric}")
     print(f"Threshold: {threshold}")
     
@@ -1080,3 +1086,644 @@ def calculate_lrc(graphs_by_seed, predicates_df):
         lrc_by_seed[seed] = lrc_df_seed
     
         return lrc_by_seed
+
+def calculate_lrc_single_graph(graph, predicates_df):
+    """
+    Calcula Local Reaching Centrality (LRC) para todos os nós de um único grafo.
+    
+    A LRC mede a importância de cada nó baseada em sua capacidade de alcançar
+    outros nós no grafo, ponderada pelos pesos das arestas. Nós com maior LRC
+    são mais centrais/importantes na estrutura do grafo.
+    
+    Parameters
+    ----------
+    - **graph** : nx.DiGraph
+        Grafo direcionado do NetworkX (retornado por build_fold_predicate_graph ou similar).
+        
+    - **predicates_df** : pd.DataFrame
+        DataFrame com informações dos predicados. Colunas obrigatórias:
+        - 'rule': Regra do predicado (ex: "Ca ka <= 25.5")
+        - 'zone': Nome da zona espectral
+        - 'thresholds': Valor do threshold
+        - 'operator': "<=" ou ">"
+    
+    Returns
+    -------
+    - **lrc_df** : pd.DataFrame
+        DataFrame com as seguintes colunas:
+        - **Node**: Nome do nó (regra do predicado ou 'Class_A'/'Class_B')
+        - **Local_Reaching_Centrality**: Valor da LRC (quanto maior, mais importante)
+        - **Zone**: Nome da zona espectral (None para nós terminais)
+        - **Threshold**: Valor do threshold (None para nós terminais)
+        - **Operator**: Operador da regra (None para nós terminais)
+        
+        **Ordenação**: Decrescente por LRC (nós mais importantes primeiro)
+    """
+    import networkx as nx
+    import pandas as pd
+    import numpy as np
+    
+    print(f"\nProcessando LRC do grafo...")
+    
+    # 1. CALCULAR LRC PARA CADA NÓ
+    local_reaching_centrality = {
+        node: nx.local_reaching_centrality(graph, node, weight='weight')
+        for node in graph.nodes()
+    }
+    
+    # Ordenar por LRC (decrescente)
+    sorted_lrc = sorted(
+        local_reaching_centrality.items(),
+        key=lambda x: x[1],
+        reverse=True
+    )
+    
+    # 2. CRIAR DATAFRAME COM LRC
+    lrc_df = pd.DataFrame(sorted_lrc, columns=['Node', 'Local_Reaching_Centrality'])
+    
+    # 3. EXTRAIR METADADOS DOS PREDICADOS
+    zones = []
+    thresholds = []
+    operators = []
+    
+    for node in lrc_df['Node']:
+        if node.startswith('Class_'):
+            # Nó terminal
+            zones.append(None)
+            thresholds.append(None)
+            operators.append(None)
+        else:
+            # Predicado: buscar metadados em predicates_df
+            pred_row_filtered = predicates_df[predicates_df['rule'] == node]
+            
+            if len(pred_row_filtered) == 0:
+                # Predicado não encontrado (não deveria acontecer)
+                zones.append('Unknown')
+                thresholds.append(None)
+                operators.append(None)
+            else:
+                pred_row = pred_row_filtered.iloc[0]
+                zones.append(pred_row['zone'])
+                thresholds.append(pred_row['thresholds'])
+                operators.append(pred_row['operator'])
+    
+    # Adicionar colunas ao DataFrame
+    lrc_df['Zone'] = zones
+    lrc_df['Threshold'] = thresholds
+    lrc_df['Operator'] = operators
+    
+    return lrc_df
+    
+def build_fold_predicate_graph(bags_result, mi_results_dict, predicates_df, 
+                         random_state=42, show_details=True, 
+                         normalize_weights=False,
+                         weight_mode='ranking',
+                         co_occurrence_matrix=None,
+                         apply_confidence_multiplier=False,
+                         accumulate_cooccurrence_weights=False):
+    """
+    Constrói um grafo direcionado de predicados com diferentes esquemas de peso.
+    
+    MODOS DE PESO DISPONÍVEIS (weight_mode):
+    
+    1. weight_mode='ranking' (PADRÃO):
+       - Peso da aresta = posição invertida no ranking do predicado de ORIGEM
+       - Predicados mais importantes (rank 1) contribuem com maior peso
+       - Se mesma aresta aparece em múltiplos folds: SOMA os pesos
+       - Desempate bidirecional: peso acumulado maior vence
+       - Opção normalize_weights disponível
+    
+    2. weight_mode='cooccurrence':
+       - Peso da aresta = número de amostras que satisfazem AMBOS os predicados
+       - Valor SEMPRE obtido da matriz de co-ocorrência GLOBAL
+       
+       DUAS SUB-ESTRATÉGIAS DISPONÍVEIS:
+       
+       a) accumulate_cooccurrence_weights=False (PADRÃO):
+          - Peso da aresta = valor da matriz (fixo)
+          - Se aresta aparece em múltiplos folds: NÃO soma (mantém peso original)
+          - Desempate bidirecional: usa score de confiança
+       
+       b) accumulate_cooccurrence_weights=True:
+          - Peso da aresta = Σ valor_matriz para cada fold que contém a aresta
+          - Se aresta aparece em múltiplos folds: SOMA o valor da matriz
+          - Desempate bidirecional: usa peso acumulado
+       
+       Em ambos casos: apply_confidence_multiplier pode ser usado
+    
+    MULTIPLICADOR DE CONFIANÇA (apply_confidence_multiplier):
+    
+    Quando weight_mode='cooccurrence' e apply_confidence_multiplier=True:
+    - Após resolver arestas bidirecionais, multiplica cada peso pelo seu score
+    - Peso_final = co_ocorrência × score_de_confiança
+    - Combina informação de amostras (co-ocorrência) com consistência (score)
+    - Funciona com accumulate=False (peso fixo × score) ou accumulate=True (peso acumulado × score)
+    
+    SCORE DE CONFIANÇA:
+    
+    Usado para desempate de arestas bidirecionais quando peso é simétrico:
+    - Cada vez que a aresta A→B aparece em um fold, soma-se o rank invertido de A
+    - Score(A→B) = Σ (n_predicados - rank_A + 1) para cada fold onde A→B aparece
+    - A direção com maior score de confiança vence
+    - NOTA: Quando accumulate_cooccurrence_weights=True, usa peso acumulado ao invés de score
+    
+    OPÇÕES DE NORMALIZAÇÃO (apenas para weight_mode='ranking'):
+    
+    - normalize_weights=False (padrão):
+      * Peso = (k - rank + 1), onde k = número de predicados
+      * Rank 1 → peso = k (máximo) | Rank k → peso = 1 (mínimo)
+    
+    - normalize_weights=True:
+      * Peso = (k - rank + 1) / k  (normalização no intervalo [1/k, 1])
+      * Rank 1 → peso = 1.0 (máximo) | Rank k → peso = 1/k (mínimo positivo)
+    
+    Parameters
+    ----------
+    - bags_result : dict - Dicionário com folds de predicados
+    - mi_results_dict : dict - Dicionário com rankings de MI/Cov para cada fold
+    - predicates_df : pd.DataFrame - DataFrame com informações dos predicados
+    - random_state : int - Semente para desempate aleatório (usado apenas em empates)
+    - show_details : bool - Se True, imprime detalhes da resolução de bidirecionais
+    - normalize_weights : bool - Se True, normaliza pesos no intervalo [0, 1]
+                                 (APENAS para weight_mode='ranking')
+    - weight_mode : str - 'ranking' ou 'cooccurrence'
+    - co_occurrence_matrix : pd.DataFrame - Matriz de co-ocorrência global entre predicados
+                                            (OBRIGATÓRIO se weight_mode='cooccurrence')
+    - apply_confidence_multiplier : bool - Se True, multiplica peso final pelo score
+                                           (APENAS para weight_mode='cooccurrence')
+    - accumulate_cooccurrence_weights : bool - Se True, soma valores da matriz quando aresta
+                                               aparece em múltiplos folds
+                                               (APENAS para weight_mode='cooccurrence')
+    
+    Returns
+    -------
+    - DG : nx.DiGraph - Grafo direcionado com pesos e scores de confiança
+    """
+    import networkx as nx
+    import numpy as np
+    import pandas as pd
+    
+    # VALIDAÇÃO DE PARÂMETROS
+    
+    # Valida o modo de peso
+    valid_modes = ['ranking', 'cooccurrence']
+    if weight_mode not in valid_modes:
+        raise ValueError(f"weight_mode deve ser um de {valid_modes}, recebido: '{weight_mode}'")
+    
+    # Se modo é cooccurrence, matriz é SEMPRE obrigatória
+    if weight_mode == 'cooccurrence' and co_occurrence_matrix is None:
+        raise ValueError("co_occurrence_matrix é obrigatório quando weight_mode='cooccurrence'")
+    
+    # Aviso se normalize_weights=True mas modo é cooccurrence
+    if weight_mode == 'cooccurrence' and normalize_weights:
+        print(" AVISO: normalize_weights=True ignorado em weight_mode='cooccurrence'")
+        print("   (Pesos de co-ocorrência representam contagens reais de amostras)")
+    
+    # Aviso se apply_confidence_multiplier=True mas modo não é cooccurrence
+    if weight_mode != 'cooccurrence' and apply_confidence_multiplier:
+        print(" AVISO: apply_confidence_multiplier=True ignorado em weight_mode='ranking'")
+        print("   (Multiplicador de confiança só se aplica ao modo 'cooccurrence')")
+    
+    # Aviso se accumulate_cooccurrence_weights=True mas modo não é cooccurrence
+    if weight_mode != 'cooccurrence' and accumulate_cooccurrence_weights:
+        print(" AVISO: accumulate_cooccurrence_weights=True ignorado em weight_mode='ranking'")
+        print("   (Acumulação de co-ocorrências só se aplica ao modo 'cooccurrence')")
+    
+    # Define semente para reprodutibilidade em caso de empates
+    np.random.seed(random_state)
+    
+    # FASE 1: INICIALIZAÇÃO DO GRAFO    
+    print(f"\n{'='*60}")
+    print(f"CONSTRUÇÃO DO GRAFO DE PREDICADOS")
+    print(f"Modo de peso: {weight_mode.upper()}")
+    if weight_mode == 'cooccurrence':
+        print(f"Fonte: Matriz de co-ocorrência global")
+        if accumulate_cooccurrence_weights:
+            print(f"Sub-estratégia: ACUMULATIVA (soma valores da matriz)")
+        else:
+            print(f"Sub-estratégia: NÃO-ACUMULATIVA (peso fixo da matriz)")
+    print(f"{'='*60}")
+    
+    # Cria grafo direcionado vazio
+    DG = nx.DiGraph()
+    
+    # Adiciona nós terminais (classes de saída)
+    DG.add_node('Class_A', node_type='terminal', class_label='A')
+    DG.add_node('Class_B', node_type='terminal', class_label='B')
+    
+    # FASE 2: ACUMULAÇÃO DE ARESTAS
+    
+    # Contador de folds processados
+    n_folds_processed = 0
+    
+    # Itera sobre cada fold
+    for bag_name, bag_predicates_dict in bags_result.items():
+        
+        # Obtém o ranking de MI/Cov para este fold
+        mi_ranking = mi_results_dict[bag_name]
+        
+        # Lista de predicados ordenados por importância (maior → menor)
+        ordered_predicates = mi_ranking['Predicate'].tolist()
+        
+        # Filtra apenas predicados que existem neste fold
+        ordered_predicates = [p for p in ordered_predicates if p in bag_predicates_dict.keys()]
+        
+        # Pula se não houver predicados válidos
+        if len(ordered_predicates) == 0:
+            continue # o continue pula para o próximo fold caso este esteja vazio
+        
+        # Incrementa contador de folds
+        n_folds_processed += 1
+        
+        # Número total de predicados neste fold (usado para calcular score/peso)
+        n_predicates = len(ordered_predicates)
+        
+        # LOOP: Constrói caminho sequencial P1 → P2 → P3 → ... → Terminal
+        
+        for i in range(len(ordered_predicates) - 1):
+            # Predicado atual (origem da aresta)
+            pred_current = ordered_predicates[i]
+            # Próximo predicado (destino da aresta)
+            pred_next = ordered_predicates[i + 1]
+            
+            # Adiciona nós ao grafo (se já existirem, apenas atualiza atributos)
+            DG.add_node(pred_current, node_type='predicate')
+            DG.add_node(pred_next, node_type='predicate')
+            
+            # Posição no ranking (1-indexed): 1 = mais importante
+            rank_position = i + 1
+            
+            # CÁLCULO DO SCORE DE CONFIANÇA
+            # Usado no modo cooccurrence para desempate e no modo ranking como peso
+            # Score = rank invertido = (n_predicados - posição + 1)
+            # Rank 1 → score = n | Rank 2 → score = n-1 | ... | Rank n → score = 1
+            confidence_score = n_predicates - rank_position + 1 # o + 1 é para ajustar o rank 1 ao score máximo n_predicados
+            
+            # MODO RANKING: Peso = Score de Confiança (com opção de normalização)
+            if weight_mode == 'ranking':
+                if normalize_weights:
+                    # PESO NORMALIZADO: (k - rank + 1) / k → intervalo [1/k, 1]
+                    # Garante que o peso mínimo seja 1/k (positivo) para LRC funcionar corretamente
+                    edge_weight = (n_predicates - rank_position + 1) / n_predicates
+                else:
+                    # PESO NÃO NORMALIZADO: score de confiança diretamente
+                    edge_weight = confidence_score
+                
+                # Acumula peso se aresta já existe, senão cria nova aresta
+                if DG.has_edge(pred_current, pred_next):
+                    # Aresta já existe: SOMA o peso (comportamento original)
+                    DG[pred_current][pred_next]['weight'] += edge_weight
+                    DG[pred_current][pred_next]['confidence_score'] += confidence_score
+                    DG[pred_current][pred_next]['fold_contributions'].append({
+                        'fold': bag_name, 
+                        'rank': rank_position, 
+                        'weight': edge_weight,
+                        'score': confidence_score
+                    })
+                else:
+                    # Nova aresta: cria com peso inicial
+                    DG.add_edge(
+                        pred_current, 
+                        pred_next, 
+                        weight=edge_weight,
+                        confidence_score=confidence_score,
+                        fold_contributions=[{
+                            'fold': bag_name, 
+                            'rank': rank_position, 
+                            'weight': edge_weight,
+                            'score': confidence_score
+                        }]
+                    )
+            
+            # MODO CO-OCORRÊNCIA: Peso = amostras que satisfazem ambos predicados
+            elif weight_mode == 'cooccurrence':
+                # Obtém peso da matriz de co-ocorrência GLOBAL
+                # A matriz é simétrica, então cooc[A,B] = cooc[B,A]
+                try:
+                    cooc_weight = co_occurrence_matrix.loc[pred_current, pred_next]
+                except KeyError:
+                    # Se par não existe na matriz, peso = 0
+                    cooc_weight = 0
+                    print(f" ⚠️ Par não encontrado na matriz: ({pred_current}, {pred_next})")
+                
+                # SUB-ESTRATÉGIA: ACUMULATIVA
+                if accumulate_cooccurrence_weights:
+                    # Cada vez que a aresta aparece, SOMA o valor da matriz
+                    if DG.has_edge(pred_current, pred_next):
+                        # Aresta já existe: SOMA o peso da matriz (acumulação)
+                        DG[pred_current][pred_next]['weight'] += cooc_weight
+                        DG[pred_current][pred_next]['confidence_score'] += confidence_score
+                        DG[pred_current][pred_next]['fold_contributions'].append({
+                            'fold': bag_name, 
+                            'rank': rank_position, 
+                            'weight': cooc_weight,
+                            'score': confidence_score
+                        })
+                    else:
+                        # Nova aresta: cria com peso da matriz
+                        DG.add_edge(
+                            pred_current, 
+                            pred_next, 
+                            weight=cooc_weight,
+                            confidence_score=confidence_score,
+                            fold_contributions=[{
+                                'fold': bag_name, 
+                                'rank': rank_position, 
+                                'weight': cooc_weight,
+                                'score': confidence_score
+                            }]
+                        )
+                
+                # SUB-ESTRATÉGIA: NÃO-ACUMULATIVA
+                else:
+                    # Peso fixo da matriz (não acumula)
+                    if DG.has_edge(pred_current, pred_next):
+                        # Aresta já existe: NÃO soma peso (mantém original)
+                        # Mas ACUMULA o score de confiança para desempate posterior
+                        DG[pred_current][pred_next]['confidence_score'] += confidence_score
+                        DG[pred_current][pred_next]['fold_contributions'].append({
+                            'fold': bag_name, 
+                            'rank': rank_position, 
+                            'weight': cooc_weight,
+                            'score': confidence_score
+                        })
+                    else:
+                        # Nova aresta: cria com peso da co-ocorrência
+                        DG.add_edge(
+                            pred_current, 
+                            pred_next, 
+                            weight=cooc_weight,
+                            confidence_score=confidence_score,
+                            fold_contributions=[{
+                                'fold': bag_name, 
+                                'rank': rank_position, 
+                                'weight': cooc_weight,
+                                'score': confidence_score
+                            }]
+                        )
+        
+        # CONEXÃO DO ÚLTIMO PREDICADO AO TERMINAL
+        
+        # Obtém o último predicado (menor importância no fold)
+        last_pred = ordered_predicates[-1]
+        
+        # Garante que o nó existe
+        DG.add_node(last_pred, node_type='predicate')
+        
+        # Obtém DataFrame do último predicado para determinar classe majoritária
+        df_last = bag_predicates_dict[last_pred]
+        
+        # Conta amostras por classe predita
+        class_counts = df_last['Class_Predicted'].value_counts()
+        
+        # Determina classe majoritária
+        majority_class = class_counts.idxmax()
+        
+        # Define nó terminal correspondente
+        terminal_node = f'Class_{majority_class}'
+        
+        # PESO DA ARESTA PARA O TERMINAL
+        if weight_mode == 'ranking':
+            if normalize_weights:
+                # Peso mínimo positivo (1/k) para LRC funcionar corretamente
+                terminal_weight = 1.0 / n_predicates  # Último rank normalizado
+            else:
+                terminal_weight = 1  # Score mínimo (último rank)
+            terminal_score = 1  # Score mínimo (último rank)
+            
+            # Acumula peso na aresta para o terminal
+            if DG.has_edge(last_pred, terminal_node):
+                DG[last_pred][terminal_node]['weight'] += terminal_weight
+                DG[last_pred][terminal_node]['confidence_score'] += terminal_score
+            else:
+                DG.add_edge(last_pred, terminal_node, 
+                           weight=terminal_weight, 
+                           confidence_score=terminal_score,
+                           fold_contributions=[])
+        
+        elif weight_mode == 'cooccurrence':
+            # Para terminal, usamos contagem de amostras do predicado
+            terminal_weight = len(df_last)
+            terminal_score = 1  # Score mínimo (último rank)
+            
+            if DG.has_edge(last_pred, terminal_node):
+                # NÃO soma peso, mas acumula score
+                DG[last_pred][terminal_node]['confidence_score'] += terminal_score
+            else:
+                DG.add_edge(last_pred, terminal_node,
+                           weight=terminal_weight,
+                           confidence_score=terminal_score,
+                           fold_contributions=[])
+    
+    print(f"\nFolds processados: {n_folds_processed}")
+    print(f"Arestas criadas (antes de resolver bidirecionais): {DG.number_of_edges()}")
+    
+    # FASE 3: IDENTIFICAÇÃO E REMOÇÃO DE ARESTAS BIDIRECIONAIS
+    
+    # Lista para armazenar pares bidirecionais encontrados
+    bidirectional_pairs = []
+    
+    # Set para rastrear pares já processados
+    processed = set()
+    
+    # Itera sobre todas as arestas do grafo
+    for u, v in DG.edges():
+        # Verifica se existe aresta reversa (bidirecional)
+        if DG.has_edge(v, u) and (v, u) not in processed:
+            # Obtém atributos de ambas as direções
+            weight_forward = float(DG[u][v]['weight'])
+            weight_reverse = float(DG[v][u]['weight'])
+            score_forward = float(DG[u][v]['confidence_score'])
+            score_reverse = float(DG[v][u]['confidence_score'])
+            
+            # Armazena informações do par bidirecional
+            bidirectional_pairs.append({
+                'node_A': u,
+                'node_B': v,
+                'weight_A_to_B': weight_forward,
+                'weight_B_to_A': weight_reverse,
+                'score_A_to_B': score_forward,
+                'score_B_to_A': score_reverse
+            })
+            
+            # Marca ambas direções como processadas
+            processed.add((u, v))
+            processed.add((v, u))
+    
+    # Imprime total de pares bidirecionais encontrados
+    print(f"\n{'='*60}")
+    print(f"RESOLUÇÃO DE ARESTAS BIDIRECIONAIS")
+    print(f"{'='*60}")
+    print(f"Total de pares bidirecionais encontrados: {len(bidirectional_pairs)}")
+    
+    if weight_mode == 'ranking':
+        print(f"Critério de desempate: PESO ACUMULADO (soma dos ranks invertidos)")
+    else:
+        if accumulate_cooccurrence_weights:
+            print(f"Critério de desempate: PESO ACUMULADO (soma das co-ocorrências locais)")
+        else:
+            print(f"Critério de desempate: SCORE DE CONFIANÇA (soma dos ranks invertidos)")
+            print(f"(Peso de co-ocorrência global é simétrico, então usamos score para decidir direção)")
+    
+    # Contador de arestas removidas
+    n_removed = 0
+    
+    # Resolve cada par bidirecional
+    for pair in bidirectional_pairs:
+        u = pair['node_A']
+        v = pair['node_B']
+        weight_forward = pair['weight_A_to_B']
+        weight_reverse = pair['weight_B_to_A']
+        score_forward = pair['score_A_to_B']
+        score_reverse = pair['score_B_to_A']
+        
+        # CRITÉRIO DE DECISÃO DEPENDE DO MODO E SUB-ESTRATÉGIA
+        if weight_mode == 'ranking':
+            # Modo ranking: usa peso acumulado como critério
+            criterion_forward = weight_forward
+            criterion_reverse = weight_reverse
+            criterion_name = "peso"
+        elif weight_mode == 'cooccurrence' and accumulate_cooccurrence_weights:
+            # Modo cooccurrence ACUMULATIVO: usa peso acumulado como critério
+            # (pesos locais de folds diferentes são somados, então não são simétricos)
+            criterion_forward = weight_forward
+            criterion_reverse = weight_reverse
+            criterion_name = "peso"
+        else:
+            # Modo cooccurrence GLOBAL: usa score de confiança como critério
+            # (peso de co-ocorrência global é simétrico)
+            criterion_forward = score_forward
+            criterion_reverse = score_reverse
+            criterion_name = "score"
+        
+        # RESOLUÇÃO DO PAR BIDIRECIONAL
+        if criterion_forward > criterion_reverse:
+            # Critério A→B é maior: remove B→A
+            DG.remove_edge(v, u)
+            if show_details:
+                print(f"\n[{u} ↔ {v}]")
+                print(f"  ✗ Removida: {v} → {u} ({criterion_name}={criterion_reverse:.2f}, peso={weight_reverse:.2f})")
+                print(f"  ✓ Mantida:  {u} → {v} ({criterion_name}={criterion_forward:.2f}, peso={weight_forward:.2f})")
+            n_removed += 1
+            
+        elif criterion_reverse > criterion_forward:
+            # Critério B→A é maior: remove A→B
+            DG.remove_edge(u, v)
+            if show_details:
+                print(f"\n[{u} ↔ {v}]")
+                print(f"  ✗ Removida: {u} → {v} ({criterion_name}={criterion_forward:.2f}, peso={weight_forward:.2f})")
+                print(f"  ✓ Mantida:  {v} → {u} ({criterion_name}={criterion_reverse:.2f}, peso={weight_reverse:.2f})")
+            n_removed += 1
+            
+        else:
+            # EMPATE: escolha aleatória baseada em random_state
+            if np.random.rand() > 0.5:
+                DG.remove_edge(v, u)
+                if show_details:
+                    print(f"\n[{u} ↔ {v}]  EMPATE ({criterion_name}={criterion_forward:.2f})")
+                    print(f"  ✗ Removida (aleatório): {v} → {u}")
+                    print(f"  ✓ Mantida:  {u} → {v}")
+            else:
+                DG.remove_edge(u, v)
+                if show_details:
+                    print(f"\n[{u} ↔ {v}]  EMPATE ({criterion_name}={criterion_forward:.2f})")
+                    print(f"  ✗ Removida (aleatório): {u} → {v}")
+                    print(f"  ✓ Mantida:  {v} → {u}")
+            n_removed += 1
+    
+    # FASE 4: APLICAÇÃO DO MULTIPLICADOR DE CONFIANÇA (OPCIONAL)
+    # Esta fase só é executada quando:
+    # - weight_mode == 'cooccurrence' E
+    # - apply_confidence_multiplier == True
+    #
+    # O objetivo é combinar a informação de co-ocorrência (quantas amostras
+    # satisfazem ambos predicados) com a informação de confiança (quão 
+    # consistentemente essa direção aparece nos folds com alta importância).
+    #
+    # Peso_final = co_ocorrência × score_de_confiança
+    
+    if weight_mode == 'cooccurrence' and apply_confidence_multiplier:
+        print(f"\n{'='*60}")
+        print(f"APLICAÇÃO DO MULTIPLICADOR DE CONFIANÇA")
+        print(f"{'='*60}")
+        print(f"Fórmula: peso_final = co_ocorrência × score_de_confiança")
+        
+        # Contador de arestas modificadas
+        n_multiplied = 0
+        
+        # Itera sobre todas as arestas restantes no grafo
+        for u, v, data in DG.edges(data=True):
+            # Obtém peso original (co-ocorrência) e score de confiança
+            original_weight = data['weight']
+            confidence_score = data['confidence_score']
+            
+            # Calcula novo peso multiplicado
+            # Peso_final = co_ocorrência × score
+            new_weight = original_weight * confidence_score
+            
+            # Atualiza o peso da aresta
+            DG[u][v]['weight'] = new_weight
+            
+            # Armazena valores originais para referência
+            DG[u][v]['original_cooccurrence'] = original_weight
+            
+            n_multiplied += 1
+            
+            # Mostra detalhes se solicitado
+            if show_details and n_multiplied <= 10:
+                print(f"  {u} → {v}: {original_weight} × {confidence_score} = {new_weight:.2f}")
+        
+        if show_details and n_multiplied > 10:
+            print(f"  ... e mais {n_multiplied - 10} arestas")
+        
+        print(f"\nTotal de arestas com peso multiplicado: {n_multiplied}")
+    
+    # FASE 5: RESUMO FINAL DO GRAFO    
+    print(f"\n{'='*60}")
+    print(f"RESUMO FINAL DO GRAFO")
+    print(f"{'='*60}")
+    
+    # Imprime informações sobre o esquema de pesos usado
+    if weight_mode == 'ranking':
+        if normalize_weights:
+            print(f"\nEsquema de Pesos: RANKING NORMALIZADO")
+            print(f"  Fórmula: peso = (k - rank + 1) / k")
+            print(f"  Intervalo: [1/k, 1.0] (mínimo positivo)")
+        else:
+            print(f"\nEsquema de Pesos: RANKING NÃO NORMALIZADO")
+            print(f"  Fórmula: peso = (k - rank + 1)")
+            print(f"  Intervalo: [1, k] (valores inteiros)")
+        print(f"  Arestas repetidas: SOMA de pesos")
+        print(f"  Desempate bidirecional: Peso acumulado maior vence")
+    else:
+        print(f"\nEsquema de Pesos: CO-OCORRÊNCIA (matriz global)")
+        print(f"  Fonte: Matriz de co-ocorrência calculada no dataset completo")
+        print(f"  Significado: Número de amostras que satisfazem ambos predicados")
+        
+        if accumulate_cooccurrence_weights:
+            print(f"\n  Tipo: ACUMULATIVA")
+            print(f"  Fórmula: peso = Σ matriz_cooc[A,B] para cada fold que contém A→B")
+            print(f"  Arestas repetidas: SOMA o valor da matriz (acumulação entre folds)")
+            print(f"  Desempate bidirecional: Peso acumulado maior vence")
+        else:
+            print(f"\n  Tipo: NÃO-ACUMULATIVA")
+            print(f"  Fórmula: peso = matriz_cooc[A,B] (valor fixo)")
+            print(f"  Arestas repetidas: NÃO soma (mantém peso original da matriz)")
+            print(f"  Desempate bidirecional: Score de confiança (soma ranks invertidos)")
+        
+        if apply_confidence_multiplier:
+            print(f"\n  ✓ MULTIPLICADOR DE CONFIANÇA APLICADO")
+            print(f"    Fórmula final: peso = co_ocorrência × score_de_confiança")
+            print(f"    Combina informação de amostras (matriz) com consistência (score)")
+        else:
+            print(f"\n  ✗ Multiplicador de confiança NÃO aplicado")
+            print(f"    (use apply_confidence_multiplier=True para habilitar)")
+    
+    print(f"\nEstatísticas do Grafo:")
+    print(f"  Total de arestas iniciais: {DG.number_of_edges() + n_removed}")
+    print(f"  Arestas removidas (bidirecionais): {n_removed}")
+    print(f"  Arestas finais: {DG.number_of_edges()}")
+    print(f"  Nós predicados: {len([n for n, attr in DG.nodes(data=True) if attr.get('node_type') == 'predicate'])}")
+    print(f"  Nós terminais: {len([n for n, attr in DG.nodes(data=True) if attr.get('node_type') == 'terminal'])}")
+    
+    return DG
