@@ -184,6 +184,88 @@ def _convert_pls_prediction_to_class(y_pred_continuous, threshold=0.5, class_lab
     # Converter para classes usando threshold
     return np.where(y_flat >= threshold, class_labels[0], class_labels[1])
 
+def spectral_perturbation_importance(model, X, y_pred_original, spectral_cuts, 
+                                      perturbation_value=0, metric='mean_abs_diff'):
+    """
+    Perturba regiões espectrais e avalia o impacto nas predições do modelo.
+    
+    Parâmetros:
+    -----------
+    model : estimator
+        Modelo treinado (ex: PLS-DA)
+    X : pd.DataFrame
+        Dados espectrais originais (amostras x wavelengths)
+    y_pred_original : array-like
+        Predições originais do modelo
+    spectral_cuts : list of tuples
+        Lista de tuplas (nome_zona, inicio, fim) definindo regiões espectrais
+    perturbation_value : float, default=0
+        Valor a ser usado na perturbação (0 para zerar, 1 para mudar para 1, etc)
+    metric : str, default='mean_abs_diff'
+        Métrica para calcular a importância: 'mean_abs_diff', 'mean_diff', 'mean_relative_dev'.
+        - 'mean_abs_diff': média da diferença absoluta
+        - 'mean_diff': média da diferença (com sinal)
+        - 'mean_relative_dev': média do desvio relativo (cuidado com divisão por zero)
+    
+    Retorna:
+    --------
+    pd.DataFrame
+        DataFrame com zona espectral e importância (diferença média nas predições)
+    """
+    import pandas as pd
+    import numpy as np
+    
+    results = []
+    
+    for zone_name, start, end in spectral_cuts:
+        # Criar cópia dos dados para perturbação
+        X_perturbed = X.copy()
+        # Identificar colunas dentro do range da zona espectral
+        cols_to_perturb = [col for col in X.columns if start <= float(col) <= end]
+        # Perturbar as colunas (mudar para o valor especificado)
+        X_perturbed[cols_to_perturb] = perturbation_value
+        # Fazer predição com dados perturbados
+        y_pred_perturbed = model.predict(X_perturbed)
+        # Calcular diferença entre predições
+        if metric == 'mean_abs_diff':
+            importance = np.mean(np.abs(y_pred_original - y_pred_perturbed))
+        elif metric == 'mean_diff':
+            importance = np.mean(y_pred_original - y_pred_perturbed)
+        elif metric == 'mean_relative_dev':
+            y_pred_original_safe = np.where(y_pred_original == 0, np.nan, y_pred_original)
+            rel_dev = (y_pred_perturbed - y_pred_original) / y_pred_original_safe
+            importance = np.nanmean(rel_dev)
+        else:
+            raise ValueError(f"Métrica '{metric}' não suportada. Use 'mean_abs_diff', 'mean_diff' ou 'mean_relative_dev'.")
+        
+        if metric == 'mean_relative_dev' or metric == 'mean_diff':
+            pass  # importance já tem o sinal
+            # Armazenar resultados
+            results.append({
+                'Zone': zone_name,
+                'Start': start,
+                'End': end,
+                'Importance': importance,
+                'Abs_Importance': np.abs(importance),
+                'N_Features': len(cols_to_perturb)
+            })
+        else:
+            # Armazenar resultados
+            results.append({
+                'Zone': zone_name,
+                'Start': start,
+                'End': end,
+                'Importance': importance,
+                'N_Features': len(cols_to_perturb)
+            })
+
+    # Criar DataFrame e ordenar por importância
+    results_df = pd.DataFrame(results)
+    if metric == 'mean_relative_dev' or metric == 'mean_diff':
+        results_df = results_df.sort_values(by='Abs_Importance', ascending=False).reset_index(drop=True)
+    else:
+        results_df = results_df.sort_values(by='Importance', ascending=False).reset_index(drop=True)
+    return results_df
 
 def _manual_block_permutation(
     estimator,
@@ -948,4 +1030,438 @@ def calculate_predicate_metrics_permutation(
         # Isso permite acesso sem quebrar o pipeline existente
         metrics_results_dict['__detailed_permutation_results__'] = detailed_df
     
+    return metrics_results_dict
+
+
+def calculate_predicate_perturbation(
+    estimator,
+    Xcalclass_prep: pd.DataFrame,
+    folds_struct: Dict,
+    predicates_df: pd.DataFrame,
+    spectral_cuts: List[Tuple[str, float, float]],
+    perturbation_value: float = 0,
+    metric: str = 'mean_abs_diff',
+    verbose: bool = False,
+    save_detailed_results: bool = True
+) -> Dict:
+    """
+    Calcula a importância de cada predicado usando Perturbação Espectral.
+    
+    Esta função é uma alternativa à permutação. Em vez de permutar valores,
+    ela substitui os valores da zona espectral por um valor fixo (ex: 0) e
+    mede o impacto na predição do modelo.
+    
+    Parameters
+    ----------
+    estimator : sklearn estimator
+        Modelo treinado com método predict()
+    Xcalclass_prep : pd.DataFrame
+        Dataset de calibração pré-processado (n_samples × n_features)
+    folds_struct : dict
+        Estrutura de folds no formato:
+        {'Fold_1': {'rule1': DataFrame, 'rule2': DataFrame, ...}, ...}
+    predicates_df : pd.DataFrame
+        DataFrame com informações dos predicados (colunas: 'rule', 'zone', etc.)
+    spectral_cuts : list of tuples
+        Lista de cortes espectrais: [(nome, inicio, fim), ...]
+    perturbation_value : float, default=0
+        Valor usado para perturbar a zona (0 = zerar a zona)
+    metric : str, default='mean_abs_diff'
+        Métrica: 'mean_abs_diff', 'mean_diff' ou 'mean_relative_dev'
+    verbose : bool, default=False
+        Se True, imprime detalhes do progresso
+    save_detailed_results : bool, default=True
+        Se True, salva resultados detalhados
+    
+    Returns
+    -------
+    dict
+        Dicionário no formato compatível com calculate_predicate_metrics_permutation:
+        {'Fold_1': DataFrame({'Predicate': [...], 'Perturbation': [...]}), ...}
+    
+    Example
+    -------
+    >>> results = calculate_predicate_perturbation(
+    ...     estimator=pls_model,
+    ...     Xcalclass_prep=Xcal_prep,
+    ...     folds_struct=folds_result,
+    ...     predicates_df=predicates_quantiles[0],
+    ...     spectral_cuts=spectral_cuts,
+    ...     perturbation_value=0,
+    ...     metric='mean_abs_diff',
+    ...     verbose=True
+    ... )
+    >>> print(results['Fold_1'])
+    """
+    
+    # =========================================================================
+    # VALIDAÇÃO DE ENTRADAS
+    # =========================================================================
+    
+    # Verificar se o estimator tem método predict
+    if not hasattr(estimator, 'predict'):
+        # Lança erro se o modelo não tiver método predict
+        raise ValueError(f"O estimator deve ter método predict(). Tipo: {type(estimator)}")
+    
+    # Verificar se folds_struct é dicionário
+    if not isinstance(folds_struct, dict):
+        # Lança erro se a estrutura de folds não for dicionário
+        raise TypeError("folds_struct deve ser um dicionário")
+    
+    # Verificar colunas obrigatórias em predicates_df
+    required_cols = ['rule', 'zone']  # Colunas mínimas necessárias
+    missing_cols = [c for c in required_cols if c not in predicates_df.columns]
+    if missing_cols:
+        # Lança erro se faltar alguma coluna obrigatória
+        raise KeyError(f"Colunas faltando em predicates_df: {missing_cols}")
+    
+    # =========================================================================
+    # INICIALIZAÇÃO
+    # =========================================================================
+    
+    # Dicionário para armazenar resultados finais (compatível com pipeline existente)
+    metrics_results_dict = {}
+    
+    # Dicionário para armazenar resultados detalhados
+    detailed_results = {}
+    
+    # Nome da coluna de métrica no DataFrame de saída
+    metric_name = 'Perturbation'
+    
+    # Contadores para estatísticas
+    total_folds = len(folds_struct)  # Total de folds a processar
+    total_predicates_processed = 0   # Contador de predicados processados
+    total_predicates_skipped = 0     # Contador de predicados ignorados
+    
+    # Log inicial se verbose
+    if verbose:
+        print("=" * 70)
+        print("PERTURBATION IMPORTANCE PARA PREDICADOS")
+        print("=" * 70)
+        print(f"Valor de perturbação: {perturbation_value}")
+        print(f"Métrica: {metric}")
+        print(f"Total de folds: {total_folds}")
+        print()
+    
+    # =========================================================================
+    # LOOP PRINCIPAL: PROCESSAR CADA FOLD
+    # =========================================================================
+    
+    # Iterar sobre cada fold na estrutura
+    for fold_idx, (fold_name, predicates_dict) in enumerate(folds_struct.items()):
+        
+        # Log do fold atual
+        if verbose:
+            print(f"\n[{fold_name}] Processando {len(predicates_dict)} predicados...")
+        
+        # Verificar se o fold está vazio
+        if len(predicates_dict) == 0:
+            # Se vazio, criar DataFrame vazio e pular para próximo fold
+            if verbose:
+                print(f"  VAZIO - pulando")
+            metrics_results_dict[fold_name] = pd.DataFrame({
+                'Predicate': [],
+                metric_name: []
+            })
+            continue
+        
+        # Dicionário temporário para métricas deste fold
+        fold_metrics = {}
+        
+        # Dicionário temporário para resultados detalhados deste fold
+        fold_detailed = {}
+        
+        # =====================================================================
+        # LOOP: PROCESSAR CADA PREDICADO NO FOLD
+        # =====================================================================
+        
+        # Iterar sobre cada predicado do fold
+        for pred_rule, df_info in predicates_dict.items():
+            
+            # Incrementar contador de predicados processados
+            total_predicates_processed += 1
+            
+            # -----------------------------------------------------------------
+            # 1. OBTER ÍNDICES DE AMOSTRAS DO PREDICADO
+            # -----------------------------------------------------------------
+            
+            # Extrair índices das amostras que pertencem a este predicado
+            sample_indices = df_info['Sample_Index'].values.tolist()
+            
+            # Número de amostras no predicado
+            n_samples = len(sample_indices)
+            
+            # Log do predicado atual
+            if verbose:
+                print(f"  Predicado: {pred_rule} (n={n_samples})")
+            
+            # -----------------------------------------------------------------
+            # 2. VERIFICAR CASOS LIMITES
+            # -----------------------------------------------------------------
+            
+            # Se não há amostras, não é possível calcular importância
+            if n_samples == 0:
+                if verbose:
+                    print(f"    SKIP: n_samples=0 (sem amostras)")
+                # Atribuir importância zero
+                fold_metrics[pred_rule] = 0.0
+                # Salvar detalhes
+                fold_detailed[pred_rule] = {
+                    'importance': 0.0,
+                    'n_samples': n_samples,
+                    'zone_columns': [],
+                    'skip_reason': 'n_samples = 0'
+                }
+                # Incrementar contador de skips
+                total_predicates_skipped += 1
+                continue
+            
+            # -----------------------------------------------------------------
+            # 3. OBTER INFORMAÇÕES DA ZONA ESPECTRAL
+            # -----------------------------------------------------------------
+            
+            # Tentar obter colunas da zona espectral do predicado
+            try:
+                # Usar função auxiliar para obter colunas da zona
+                zone_cols = get_zone_columns_from_predicate(
+                    predicate_rule=pred_rule,
+                    predicates_df=predicates_df,
+                    spectral_cuts=spectral_cuts,
+                    Xcal_columns=Xcalclass_prep.columns
+                )
+            except (KeyError, ValueError) as e:
+                # Se erro ao obter zona, atribuir importância zero
+                if verbose:
+                    print(f"    ERRO ao obter zona: {e}")
+                fold_metrics[pred_rule] = 0.0
+                fold_detailed[pred_rule] = {
+                    'importance': 0.0,
+                    'n_samples': n_samples,
+                    'zone_columns': [],
+                    'skip_reason': str(e)
+                }
+                total_predicates_skipped += 1
+                continue
+            
+            # Verificar se a zona tem colunas
+            if len(zone_cols) == 0:
+                # Se zona vazia, atribuir importância zero
+                if verbose:
+                    print(f"    SKIP: zona espectral vazia")
+                fold_metrics[pred_rule] = 0.0
+                fold_detailed[pred_rule] = {
+                    'importance': 0.0,
+                    'n_samples': n_samples,
+                    'zone_columns': [],
+                    'skip_reason': 'zona vazia'
+                }
+                total_predicates_skipped += 1
+                continue
+            
+            # Log das colunas da zona
+            if verbose:
+                print(f"    Zona: {len(zone_cols)} colunas")
+            
+            # -----------------------------------------------------------------
+            # 4. OBTER LIMITES DA ZONA PARA PERTURBAÇÃO
+            # -----------------------------------------------------------------
+            
+            # Encontrar nome da zona associada ao predicado
+            mask_pred = predicates_df['rule'] == pred_rule
+            zone_name = predicates_df.loc[mask_pred, 'zone'].values[0]
+            
+            # Encontrar limites (start, end) da zona nos spectral_cuts
+            zone_start, zone_end = None, None
+            for cut in spectral_cuts:
+                # Extrair nome e limites do cut
+                if len(cut) == 3:
+                    name, start, end = cut
+                elif len(cut) == 2:
+                    start, end = cut
+                    name = f"{start}-{end}"
+                else:
+                    continue
+                
+                # Verificar se é a zona correta
+                if name == zone_name:
+                    zone_start, zone_end = float(start), float(end)
+                    break
+            
+            # Se não encontrou limites, pular
+            if zone_start is None or zone_end is None:
+                if verbose:
+                    print(f"    SKIP: limites da zona não encontrados")
+                fold_metrics[pred_rule] = 0.0
+                fold_detailed[pred_rule] = {
+                    'importance': 0.0,
+                    'n_samples': n_samples,
+                    'zone_columns': zone_cols,
+                    'skip_reason': 'limites não encontrados'
+                }
+                total_predicates_skipped += 1
+                continue
+            
+            # -----------------------------------------------------------------
+            # 5. EXTRAIR DADOS DAS AMOSTRAS DO PREDICADO
+            # -----------------------------------------------------------------
+            
+            # Extrair subconjunto de dados para as amostras do predicado
+            X_eval = Xcalclass_prep.iloc[sample_indices].copy()
+            
+            # -----------------------------------------------------------------
+            # 6. CALCULAR PREDIÇÃO ORIGINAL (SEM PERTURBAÇÃO)
+            # -----------------------------------------------------------------
+            
+            # Fazer predição com dados originais
+            y_pred_original = estimator.predict(X_eval)
+            
+            # Achatar array se necessário
+            y_pred_original = np.array(y_pred_original).flatten()
+            
+            # -----------------------------------------------------------------
+            # 7. PERTURBAR ZONA ESPECTRAL E CALCULAR NOVA PREDIÇÃO
+            # -----------------------------------------------------------------
+            
+            # Criar cópia dos dados para perturbação
+            X_perturbed = X_eval.copy()
+            
+            # Substituir valores da zona pelo valor de perturbação
+            X_perturbed[zone_cols] = perturbation_value
+            
+            # Fazer predição com dados perturbados
+            y_pred_perturbed = estimator.predict(X_perturbed)
+            
+            # Achatar array se necessário
+            y_pred_perturbed = np.array(y_pred_perturbed).flatten()
+            
+            # -----------------------------------------------------------------
+            # 8. CALCULAR IMPORTÂNCIA BASEADA NA MÉTRICA ESCOLHIDA
+            # -----------------------------------------------------------------
+            
+            # Calcular importância de acordo com a métrica
+            if metric == 'mean_abs_diff':
+                # Média da diferença absoluta entre predições
+                importance = np.mean(np.abs(y_pred_original - y_pred_perturbed))
+            elif metric == 'mean_diff':
+                # Média da diferença (com sinal)
+                importance = np.mean(y_pred_original - y_pred_perturbed)
+            elif metric == 'mean_relative_dev':
+                # Média do desvio relativo (cuidado com divisão por zero)
+                y_safe = np.where(y_pred_original == 0, np.nan, y_pred_original)
+                rel_dev = (y_pred_perturbed - y_pred_original) / y_safe
+                importance = np.nanmean(rel_dev)
+            else:
+                # Métrica não reconhecida, usar mean_abs_diff como fallback
+                if verbose:
+                    print(f"    AVISO: métrica '{metric}' não reconhecida, usando mean_abs_diff")
+                importance = np.mean(np.abs(y_pred_original - y_pred_perturbed))
+            
+            # -----------------------------------------------------------------
+            # 9. ARMAZENAR RESULTADOS
+            # -----------------------------------------------------------------
+            
+            # Para ranking, usar valor absoluto para métricas com sinal
+            if metric in ['mean_diff', 'mean_relative_dev']:
+                # Usar valor absoluto para ordenação
+                fold_metrics[pred_rule] = np.abs(importance)
+            else:
+                # mean_abs_diff já é absoluto
+                fold_metrics[pred_rule] = importance
+            
+            # Salvar detalhes completos
+            fold_detailed[pred_rule] = {
+                'importance': importance,
+                'importance_abs': np.abs(importance),
+                'n_samples': n_samples,
+                'zone_columns': zone_cols,
+                'n_zone_features': len(zone_cols),
+                'zone_name': zone_name,
+                'zone_start': zone_start,
+                'zone_end': zone_end
+            }
+            
+            # Log da importância calculada
+            if verbose:
+                print(f"    Importance: {importance:.6f}")
+        
+        # =====================================================================
+        # CONVERTER PARA DATAFRAME (compatível com pipeline existente)
+        # =====================================================================
+        
+        # Criar DataFrame a partir do dicionário de métricas
+        metrics_df = pd.DataFrame.from_dict(
+            fold_metrics,
+            orient='index',
+            columns=[metric_name]
+        )
+        
+        # Adicionar coluna de predicado
+        metrics_df.insert(0, 'Predicate', metrics_df.index)
+        
+        # Resetar índice para ter índice numérico
+        metrics_df = metrics_df.reset_index(drop=True)
+        
+        # Ordenar de forma DECRESCENTE (maiores valores = mais importantes)
+        metrics_df = metrics_df.sort_values(by=metric_name, ascending=False)
+        
+        # Resetar índice após ordenação
+        metrics_df = metrics_df.reset_index(drop=True)
+        
+        # Armazenar resultado do fold
+        metrics_results_dict[fold_name] = metrics_df
+        
+        # Armazenar resultados detalhados do fold
+        detailed_results[fold_name] = fold_detailed
+    
+    # =========================================================================
+    # RESUMO FINAL
+    # =========================================================================
+    
+    # Imprimir resumo se verbose
+    if verbose:
+        print("\n" + "=" * 70)
+        print("RESUMO")
+        print("=" * 70)
+        print(f"Folds processados: {total_folds}")
+        print(f"Predicados processados: {total_predicates_processed}")
+        print(f"Predicados ignorados: {total_predicates_skipped}")
+        print()
+        # Mostrar resumo por fold
+        for fold_name, df in metrics_results_dict.items():
+            # Ignorar chave especial de resultados detalhados
+            if fold_name.startswith('__'):
+                continue
+            print(f"  {fold_name}: {len(df)} predicados")
+    
+    # =========================================================================
+    # SALVAR RESULTADOS DETALHADOS (OPCIONAL)
+    # =========================================================================
+    
+    # Se solicitado, criar DataFrame com todos os detalhes
+    if save_detailed_results:
+        # Lista para armazenar linhas do DataFrame detalhado
+        detailed_rows = []
+        
+        # Iterar sobre folds e predicados
+        for fold_name, fold_data in detailed_results.items():
+            for pred_rule, pred_data in fold_data.items():
+                # Adicionar linha com informações do predicado
+                detailed_rows.append({
+                    'fold': fold_name,
+                    'predicate': pred_rule,
+                    'importance': pred_data['importance'],
+                    'importance_abs': pred_data.get('importance_abs', np.abs(pred_data['importance'])),
+                    'n_samples': pred_data['n_samples'],
+                    'n_zone_features': pred_data.get('n_zone_features', 0),
+                    'zone_name': pred_data.get('zone_name', None),
+                    'skip_reason': pred_data.get('skip_reason', None)
+                })
+        
+        # Criar DataFrame de resultados detalhados
+        detailed_df = pd.DataFrame(detailed_rows)
+        
+        # Anexar como chave especial no dicionário de resultados
+        metrics_results_dict['__detailed_perturbation_results__'] = detailed_df
+    
+    # Retornar dicionário com resultados
     return metrics_results_dict
