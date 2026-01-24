@@ -1,0 +1,32 @@
+Vip;Reg_coef;Shap;LRC_cov;LRC_pert;LRC_perm
+Ca ka;Si;Ca ka;Ca ka;Ca ka;Ca ka
+Fe ka;Mn;Mn;Fe ka;Si;Mn
+Mn;Ca ka;Si;Ca kb;Al;Si
+Si;Ti ka;Fe ka;Al;Mn;Fe ka
+Fe kb;P;Ti ka;K;background3;Ti ka
+Ti ka;Fe ka;Al;Si;Fe ka;Fe kb
+Ca kb;Al;Fe kb;Mn;background9;K
+Al;Ca kb;P;Ti ka;background4;Ca kb
+K;background11;K;Ti kb;background12;Ti kb
+sum Fe;background8;background12;Fe kb;background6;Al
+P;K;Fe ka + Ti ka;P;background10;background11
+Ti kb;Rh L + Ar;background11;background13;K;P
+background8;sum Fe;background13;sum Fe;background1;Cu
+background11;Ti kb;background1;Cr;Ca kb;background12
+Cr;background4;sum Fe;Cu;background2;background10
+Rh L + Ar;S;background5;background9;Fe kb;background13
+S;background10;Cu;background12;background11;Fe ka + Ti ka
+background4;Fe kb;Ca kb;S;Rh L + Ar;Rh L + Ar
+background13;background12;Rh L + Ar;background11;background5;S
+background12;Cu;background4;background6;background7;Cr
+background10;Cr;background6;background1;P;sum Fe
+background7;background13;background7;Fe ka + Ti ka;Ti ka;background8
+Cu;background7;Ti kb;background7;Ti kb;background7
+Fe ka + Ti ka;Fe ka + Ti ka;S;Rh L + Ar;background8;background4
+background9;background2;background3;background8;sum Fe;background2
+background2;background1;background2;background10;Cu;background1
+background5;background6;background10;;Cr;background5
+background1;background5;Cr;;Fe ka + Ti ka;background6
+background6;background3;background9;;background13;background3
+background3;background9;background8;;S;background9
+;;;;;
