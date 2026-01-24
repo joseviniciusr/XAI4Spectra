@@ -134,7 +134,7 @@ for seed in random_seeds:
         task_type='regression',
         n_repeats=5,  # Usar 10-20 em produção para resultados mais estáveis
         random_state=seed,
-        n_jobs=22,
+        n_jobs=-1,
         verbose=True,
         save_detailed_results=True
     )
