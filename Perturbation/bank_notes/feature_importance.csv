@@ -1,0 +1,20 @@
+Vip;Reg_coef;Shap;LRC_cov;LRC_pert;LRC_perm
+Fe ka;Ti ka;Ti ka;Fe ka;Ti ka;Ti ka
+Ca ka;Ti kb;Ca ka;Ca ka;background1;Cu ka
+Ti ka;Ag ka scattering;Cu ka;Ti ka;Ti kb;Ca ka
+Cu ka;Ca ka;Fe ka;Fe kb;Cu ka;Ag ka scattering
+Fe kb;Cu ka;Ti kb;Ca kb;background4;Ti kb
+Ca kb;background6;Ag ka scattering;Cu ka;Ca ka;Fe ka
+Ti kb;Ca kb;background6;Ti kb;Ag ka scattering;Ca kb
+Ag ka scattering;Cu kb;Ar ka + Ag L;Cu kb;background2;background4
+background6;background4;background4;Zn ka;background3;background6
+Cu kb;background2;background5;background5;Ca kb;Fe kb
+background4;Ar ka + Ag L;background1;background4;Cu kb;Cu kb
+Zn ka;Zn kb;background2;background2;Fe kb;Zn ka
+background2;background5;Ca kb;background1;Zn kb;background2
+Ar ka + Ag L;Fe ka;Fe kb;Ag ka scattering;Fe ka;background1
+background5;background1;background3;background6;background6;background5
+Zn kb;Zn ka;Zn ka;Zn kb;Ar ka + Ag L;Ar ka + Ag L
+background1;background3;Cu kb;background3;background5;Zn kb
+background3;Fe kb;Zn kb;Ar ka + Ag L;Zn ka;background3
+;;;;;
