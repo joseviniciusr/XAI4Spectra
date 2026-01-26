@@ -3535,3 +3535,69 @@ def build_predicate_graphv2(bags_result, predicate_ranking_dict,
     print(f"Métrica utilizada para pesos: {metric_column}\n")
     
     return DG
+
+def map_thresholds_to_natural(
+    lrc_df,                    # DataFrame com Zone e Threshold como colunas (espaço pré-processado)
+    zone_sums_preprocessed,    # zone_sums_df (pré-processado)
+    zone_sums_natural          # zone_sums_df_original (natural)
+):
+    """
+    Mapeia thresholds do espaço pré-processado para o espaço natural
+    usando a amostra mais próxima como referência.
+
+    Returns:
+        DataFrame com colunas adicionais: 'Threshold_Natural', 'Sample_Index', 'Approximation_Error', 'Node', 'Operator', 'Node_Natural'
+    """
+    result_df = lrc_df.copy()
+
+    natural_thresholds = []
+    sample_indices = []
+    approximation_errors = []
+    node_natural_list = []
+
+    for idx, row in result_df.iterrows():
+        zone_name = row['Zone']
+        threshold_val = row['Threshold']
+        operator = row['Operator']
+        node = row['Node']
+
+        # Skip None values
+        if zone_name is None or threshold_val is None or zone_name not in zone_sums_preprocessed.columns:
+            natural_thresholds.append(None)
+            sample_indices.append(None)
+            approximation_errors.append(None)
+            node_natural_list.append(None)
+            continue
+
+        threshold = float(threshold_val)
+
+        # Encontrar índice da amostra mais próxima no espaço pré-processado
+        zone_values_prep = zone_sums_preprocessed[zone_name]
+        distances = (zone_values_prep - threshold).abs()
+        closest_idx = distances.idxmin()  # índice da amostra mais próxima
+
+        # Buscar valor correspondente no espaço natural
+        natural_value = zone_sums_natural.loc[closest_idx, zone_name]
+
+        # Calcular erro de aproximação (no espaço pré-processado)
+        error = distances.loc[closest_idx]
+
+        # Montar Node_Natural (ex: "Zone > 0.123")
+        if operator is not None and natural_value is not None:
+            node_natural = f"{zone_name} {operator} {natural_value:.6f}"
+        else:
+            node_natural = None
+
+        natural_thresholds.append(natural_value)
+        sample_indices.append(closest_idx)
+        approximation_errors.append(error)
+        node_natural_list.append(node_natural)
+
+    result_df['Threshold_Natural'] = natural_thresholds
+    result_df['Reference_Sample_Index'] = sample_indices
+    result_df['Approximation_Error'] = approximation_errors
+    result_df['Node'] = lrc_df.get('Node')
+    result_df['Operator'] = lrc_df.get('Operator')
+    result_df['Node_Natural'] = node_natural_list
+
+    return result_df
