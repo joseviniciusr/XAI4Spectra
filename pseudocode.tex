@@ -1,0 +1,63 @@
+\documentclass[11pt]{article}
+
+% Pacotes necessários
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{amsmath, amssymb}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage[margin=2.5cm]{geometry}
+
+% Configurações do algpseudocode
+\algrenewcommand\algorithmicrequire{\textbf{Input:}}
+\algrenewcommand\algorithmicensure{\textbf{Output:}}
+
+\begin{document}
+
+\begin{algorithm}[H]
+\caption{SMeX: Spectral Model eXplainer}
+\begin{algorithmic}[1]
+\Require $X \in \mathbb{R}^{n \times d}$ (spectral dataset), $y \in \mathbb{R}^n$ (model predictions), $Z = \{z_1, \ldots, z_M\}$ (spectral zones), $A$ (aggregation method), $Q = \{q_1, \ldots, q_K\}$ (quantiles), $S$ (sample size for bagging), $N$ (number of bags), $\rho$ (association metric)
+
+\Ensure $L$ (ranked list of predicates by global importance)
+
+\State Initialize $P \leftarrow \emptyset$
+
+\For{$m = 1$ to $M$}
+    \State Extract zone $z_m$ from $X$ and aggregate using method $A$ to obtain $z_m^{agg}$
+    \For{$k = 1$ to $K$}
+        \State Compute quantile $q_k$ of $z_m^{agg}$
+        \State Create predicate $P_{m,k}$ and add to $P$
+    \EndFor
+\EndFor
+
+\State Initialize $B \leftarrow \emptyset$
+\For{$n = 1$ to $N$}
+    \State Randomly select $S$ samples from $X$
+    \State Filter predicates in $P$ based on selected samples to create bag $b_n$
+    \State $B \leftarrow B \cup \{b_n\}$
+\EndFor
+
+\For{$n = 1$ to $N$}
+    \State Calculate $\rho(P_i, y)$ for each predicate $P_i \in b_n$
+    \State Create ranking $R_n$ by sorting predicates in descending order of $\rho$ values
+\EndFor
+
+\State Initialize directed graph $G = (V, E)$ with terminal nodes $\{\text{Class}_A, \text{Class}_B\}$
+\For{$n = 1$ to $N$}
+    \For{consecutive predicates $P_{i_k}, P_{i_{k+1}}$ in $R_n$}
+        \State Add edge $(P_{i_k}, P_{i_{k+1}})$ with weight $w = \rho(P_{i_k})$
+        \State Accumulate weights for repeated edges
+    \EndFor
+\EndFor
+
+\For{each predicate node $P_i \in V$}
+    \State Calculate Local Reaching Centrality: $LRC(P_i)$
+\EndFor
+
+\State Sort predicates by $LRC$ values in descending order to obtain $L$
+\State \Return $L$
+\end{algorithmic}
+\end{algorithm}
+
+\end{document}
