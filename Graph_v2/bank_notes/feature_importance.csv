@@ -1,10 +1,10 @@
-Vip;Reg_coef;Shap;LRC_pert;LRC_cov
+Vip;Reg_coef;Shap;LRC_perturbation;LRC_covariance
 Fe ka;Ti ka;Ti ka;Ti ka;Fe ka
 Ca ka;Ti kb;Ca ka;Ca ka;Ca ka
 Ti ka;Ag ka scattering;Cu ka;Cu ka;Fe kb
 Cu ka;Ca ka;Fe ka;Ti kb;Ti ka
-Fe kb;Cu ka;Ti kb;Ag ka scattering;Ca kb
-Ca kb;background6;Ag ka scattering;Fe ka;Cu ka
+Fe kb;Cu ka;Ti kb;Fe ka;Ca kb
+Ca kb;background6;Ag ka scattering;Ag ka scattering;Cu ka
 Ti kb;Ca kb;background6;Ca kb;Ti kb
 Ag ka scattering;Cu kb;Ar ka + Ag L;background4;Cu kb
 background6;background4;background4;Fe kb;Zn ka
