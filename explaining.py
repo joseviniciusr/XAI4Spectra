@@ -2879,6 +2879,8 @@ def calculate_predicate_perturbation(
     predicates_df: pd.DataFrame,
     spectral_cuts: List[Tuple[str, float, float]],
     perturbation_value: float = 0,
+    perturbation_mode: str = 'constant',
+    stats_source: str = 'full',
     metric: str = 'mean_abs_diff',
     verbose: bool = False,
     save_detailed_results: bool = True
@@ -2887,8 +2889,8 @@ def calculate_predicate_perturbation(
     Calcula a importância de cada predicado usando Perturbação Espectral.
     
     Esta função é uma alternativa à permutação. Em vez de permutar valores,
-    ela substitui os valores da zona espectral por um valor fixo (ex: 0) e
-    mede o impacto na predição do modelo.
+    ela substitui os valores da zona espectral por um valor fixo (ex: 0), ou de acordo com uma estatistica como a media, mediana, maximo ou minimo da coluna.
+    Em seguida ela mede o impacto (mudança) na predição do modelo.
     
     Parameters
     ----------
@@ -2904,7 +2906,18 @@ def calculate_predicate_perturbation(
     spectral_cuts : list of tuples
         Lista de cortes espectrais: [(nome, inicio, fim), ...]
     perturbation_value : float, default=0
-        Valor usado para perturbar a zona (0 = zerar a zona)
+        Valor usado para perturbar a zona quando perturbation_mode='constant'
+    perturbation_mode : str, default='constant'
+        Modo de perturbação:
+        - 'constant': usa perturbation_value para todas as colunas (comportamento original)
+        - 'mean': substitui cada coluna pela sua média
+        - 'median': substitui cada coluna pela sua mediana
+        - 'min': substitui cada coluna pelo seu valor mínimo
+        - 'max': substitui cada coluna pelo seu valor máximo
+    stats_source : str, default='full'
+        Fonte dos dados para calcular estatísticas:
+        - 'full': usa todo o dataset (Xcalclass_prep)
+        - 'predicate': usa apenas as amostras do predicado
     metric : str, default='mean_abs_diff'
         Métrica: 'mean_abs_diff', 'mean_diff' ou 'mean_relative_dev'
     verbose : bool, default=False
@@ -2917,25 +2930,8 @@ def calculate_predicate_perturbation(
     dict
         Dicionário no formato compatível com calculate_predicate_metrics_permutation:
         {'Fold_1': DataFrame({'Predicate': [...], 'Perturbation': [...]}), ...}
-    
-    Example
-    -------
-    >>> results = calculate_predicate_perturbation(
-    ...     estimator=pls_model,
-    ...     Xcalclass_prep=Xcal_prep,
-    ...     folds_struct=folds_result,
-    ...     predicates_df=predicates_quantiles[0],
-    ...     spectral_cuts=spectral_cuts,
-    ...     perturbation_value=0,
-    ...     metric='mean_abs_diff',
-    ...     verbose=True
-    ... )
-    >>> print(results['Fold_1'])
     """
-    
-    # =========================================================================
     # VALIDAÇÃO DE ENTRADAS
-    # =========================================================================
     
     # Verificar se o estimator tem método predict
     if not hasattr(estimator, 'predict'):
@@ -2954,9 +2950,7 @@ def calculate_predicate_perturbation(
         # Lança erro se faltar alguma coluna obrigatória
         raise KeyError(f"Colunas faltando em predicates_df: {missing_cols}")
     
-    # =========================================================================
     # INICIALIZAÇÃO
-    # =========================================================================
     
     # Dicionário para armazenar resultados finais (compatível com pipeline existente)
     metrics_results_dict = {}
@@ -2972,19 +2966,31 @@ def calculate_predicate_perturbation(
     total_predicates_processed = 0   # Contador de predicados processados
     total_predicates_skipped = 0     # Contador de predicados ignorados
     
+    # Validar perturbation_mode
+    valid_modes = {'constant', 'mean', 'median', 'min', 'max'}
+    if perturbation_mode not in valid_modes:
+        raise ValueError(f"perturbation_mode deve ser um de {valid_modes}. Recebido: {perturbation_mode}")
+    
+    # Validar stats_source
+    valid_sources = {'full', 'predicate'}
+    if stats_source not in valid_sources:
+        raise ValueError(f"stats_source deve ser um de {valid_sources}. Recebido: {stats_source}")
+    
     # Log inicial se verbose
     if verbose:
         print("=" * 70)
         print("PERTURBATION IMPORTANCE PARA PREDICADOS")
         print("=" * 70)
-        print(f"Valor de perturbação: {perturbation_value}")
+        print(f"Modo de perturbação: {perturbation_mode}")
+        if perturbation_mode == 'constant':
+            print(f"Valor de perturbação: {perturbation_value}")
+        else:
+            print(f"Fonte das estatísticas: {stats_source}")
         print(f"Métrica: {metric}")
         print(f"Total de folds: {total_folds}")
         print()
     
-    # =========================================================================
     # LOOP PRINCIPAL: PROCESSAR CADA FOLD
-    # =========================================================================
     
     # Iterar sobre cada fold na estrutura
     for fold_idx, (fold_name, predicates_dict) in enumerate(folds_struct.items()):
@@ -3010,9 +3016,7 @@ def calculate_predicate_perturbation(
         # Dicionário temporário para resultados detalhados deste fold
         fold_detailed = {}
         
-        # =====================================================================
         # LOOP: PROCESSAR CADA PREDICADO NO FOLD
-        # =====================================================================
         
         # Iterar sobre cada predicado do fold
         for pred_rule, df_info in predicates_dict.items():
@@ -3020,9 +3024,7 @@ def calculate_predicate_perturbation(
             # Incrementar contador de predicados processados
             total_predicates_processed += 1
             
-            # -----------------------------------------------------------------
             # 1. OBTER ÍNDICES DE AMOSTRAS DO PREDICADO
-            # -----------------------------------------------------------------
             
             # Extrair índices das amostras que pertencem a este predicado
             sample_indices = df_info['Sample_Index'].values.tolist()
@@ -3034,9 +3036,7 @@ def calculate_predicate_perturbation(
             if verbose:
                 print(f"  Predicado: {pred_rule} (n={n_samples})")
             
-            # -----------------------------------------------------------------
             # 2. VERIFICAR CASOS LIMITES
-            # -----------------------------------------------------------------
             
             # Se não há amostras, não é possível calcular importância
             if n_samples == 0:
@@ -3055,9 +3055,7 @@ def calculate_predicate_perturbation(
                 total_predicates_skipped += 1
                 continue
             
-            # -----------------------------------------------------------------
             # 3. OBTER INFORMAÇÕES DA ZONA ESPECTRAL
-            # -----------------------------------------------------------------
             
             # Tentar obter colunas da zona espectral do predicado
             try:
@@ -3101,9 +3099,7 @@ def calculate_predicate_perturbation(
             if verbose:
                 print(f"    Zona: {len(zone_cols)} colunas")
             
-            # -----------------------------------------------------------------
             # 4. OBTER LIMITES DA ZONA PARA PERTURBAÇÃO
-            # -----------------------------------------------------------------
             
             # Encontrar nome da zona associada ao predicado
             mask_pred = predicates_df['rule'] == pred_rule
@@ -3140,16 +3136,12 @@ def calculate_predicate_perturbation(
                 total_predicates_skipped += 1
                 continue
             
-            # -----------------------------------------------------------------
             # 5. EXTRAIR DADOS DAS AMOSTRAS DO PREDICADO
-            # -----------------------------------------------------------------
             
             # Extrair subconjunto de dados para as amostras do predicado
             X_eval = Xcalclass_prep.iloc[sample_indices].copy()
             
-            # -----------------------------------------------------------------
             # 6. CALCULAR PREDIÇÃO ORIGINAL (SEM PERTURBAÇÃO)
-            # -----------------------------------------------------------------
             
             # Fazer predição com dados originais
             y_pred_original = estimator.predict(X_eval)
@@ -3157,15 +3149,36 @@ def calculate_predicate_perturbation(
             # Achatar array se necessário
             y_pred_original = np.array(y_pred_original).flatten()
             
-            # -----------------------------------------------------------------
             # 7. PERTURBAR ZONA ESPECTRAL E CALCULAR NOVA PREDIÇÃO
-            # -----------------------------------------------------------------
             
             # Criar cópia dos dados para perturbação
             X_perturbed = X_eval.copy()
             
-            # Substituir valores da zona pelo valor de perturbação
-            X_perturbed[zone_cols] = perturbation_value
+            # Aplicar perturbação de acordo com o modo escolhido
+            if perturbation_mode == 'constant':
+                # Comportamento original: valor fixo para todas as colunas
+                X_perturbed[zone_cols] = perturbation_value
+            else:
+                # Calcular estatísticas por coluna
+                # Escolher fonte dos dados para estatísticas
+                if stats_source == 'full':
+                    stats_data = Xcalclass_prep[zone_cols]
+                else:  # 'predicate'
+                    stats_data = X_eval[zone_cols]
+                
+                # Calcular estatística de acordo com o modo
+                if perturbation_mode == 'mean':
+                    col_stats = stats_data.mean(axis=0)
+                elif perturbation_mode == 'median':
+                    col_stats = stats_data.median(axis=0)
+                elif perturbation_mode == 'min':
+                    col_stats = stats_data.min(axis=0)
+                elif perturbation_mode == 'max':
+                    col_stats = stats_data.max(axis=0)
+                
+                # Substituir cada coluna pela sua estatística
+                for col in zone_cols:
+                    X_perturbed[col] = col_stats[col]
             
             # Fazer predição com dados perturbados
             y_pred_perturbed = estimator.predict(X_perturbed)
@@ -3173,9 +3186,7 @@ def calculate_predicate_perturbation(
             # Achatar array se necessário
             y_pred_perturbed = np.array(y_pred_perturbed).flatten()
             
-            # -----------------------------------------------------------------
             # 8. CALCULAR IMPORTÂNCIA BASEADA NA MÉTRICA ESCOLHIDA
-            # -----------------------------------------------------------------
             
             # Calcular importância de acordo com a métrica
             if metric == 'mean_abs_diff':
@@ -3195,9 +3206,7 @@ def calculate_predicate_perturbation(
                     print(f"    AVISO: métrica '{metric}' não reconhecida, usando mean_abs_diff")
                 importance = np.mean(np.abs(y_pred_original - y_pred_perturbed))
             
-            # -----------------------------------------------------------------
             # 9. ARMAZENAR RESULTADOS
-            # -----------------------------------------------------------------
             
             # Para ranking, usar valor absoluto para métricas com sinal
             if metric in ['mean_diff', 'mean_relative_dev']:
@@ -3216,16 +3225,16 @@ def calculate_predicate_perturbation(
                 'n_zone_features': len(zone_cols),
                 'zone_name': zone_name,
                 'zone_start': zone_start,
-                'zone_end': zone_end
+                'zone_end': zone_end,
+                'perturbation_mode': perturbation_mode,
+                'stats_source': stats_source if perturbation_mode != 'constant' else None
             }
             
             # Log da importância calculada
             if verbose:
                 print(f"    Importance: {importance:.6f}")
         
-        # =====================================================================
         # CONVERTER PARA DATAFRAME (compatível com pipeline existente)
-        # =====================================================================
         
         # Criar DataFrame a partir do dicionário de métricas
         metrics_df = pd.DataFrame.from_dict(
@@ -3252,9 +3261,7 @@ def calculate_predicate_perturbation(
         # Armazenar resultados detalhados do fold
         detailed_results[fold_name] = fold_detailed
     
-    # =========================================================================
     # RESUMO FINAL
-    # =========================================================================
     
     # Imprimir resumo se verbose
     if verbose:
@@ -3272,9 +3279,7 @@ def calculate_predicate_perturbation(
                 continue
             print(f"  {fold_name}: {len(df)} predicados")
     
-    # =========================================================================
     # SALVAR RESULTADOS DETALHADOS (OPCIONAL)
-    # =========================================================================
     
     # Se solicitado, criar DataFrame com todos os detalhes
     if save_detailed_results:
@@ -3304,3 +3309,229 @@ def calculate_predicate_perturbation(
     
     # Retornar dicionário com resultados
     return metrics_results_dict
+
+def build_predicate_graphv2(bags_result, predicate_ranking_dict, 
+                            metric_column='Cov',
+                            random_state=42, show_details=True):
+    """
+    Constrói um grafo direcionado de predicados onde os pesos das arestas
+    são baseados na Covriancia (ou outra métrica) do predicado de ORIGEM.
+    
+    Diferença da versão original (build_predicate_graph):
+    - Versão original: peso = co-ocorrência entre predicados
+    - Esta versão: peso = COV (ou métrica) do predicado de origem da aresta
+    
+    Parameters
+    ----------
+    - **bags_result** : dict
+        Dicionário com bags de predicados:
+        {'Bag_1': {'Ca ka <= 25.5': DataFrame, ...}, 'Bag_2': {...}, ...}
+        
+    - **predicate_ranking_dict** : dict
+        Dicionário com rankings de predicados segundo uma métrica para cada bag:
+        {'Bag_1': DataFrame(['Predicate', metric_column]), 'Bag_2': ...}
+        
+    - **metric_column** : str, default='Cov'
+        Nome da coluna no predicate_ranking_dict que contém a métrica de ordenação.
+        Permite flexibilidade para usar 'Cov', 'Permutation', etc.
+        
+    - **random_state** : int, default=42
+        Semente para desempate aleatório de arestas bidirecionais.
+        
+    - **show_details** : bool, default=True
+        Se True, imprime detalhes sobre remoção de arestas bidirecionais.
+    
+    Returns
+    -------
+    - **DG** : nx.DiGraph
+        Grafo direcionado com pesos baseados na métrica acumulada.
+    """
+    import networkx as nx
+    import numpy as np
+    import pandas as pd
+    
+    # Define semente para reprodutibilidade nos desempates
+    np.random.seed(random_state)
+    
+    # FASE 1: INICIALIZAÇÃO DO GRAFO
+    # Cria grafo direcionado vazio
+    DG = nx.DiGraph()
+    
+    # Adiciona os dois nós terminais (classes de destino)
+    DG.add_node('Class_A', node_type='terminal', class_label='A')
+    DG.add_node('Class_B', node_type='terminal', class_label='B')
+    
+    # FASE 2: CONSTRUÇÃO DOS CAMINHOS E ACUMULAÇÃO DE PESOS
+    # Itera sobre cada bag (cada bag sugere um caminho no grafo)
+    for bag_name, bag_predicates_dict in bags_result.items():
+        
+        # 2.1: Obtém o ranking de métricas para este bag
+
+        # predicate_ranking é um DataFrame com colunas ['Predicate', metric_column]
+        # Já está ordenado por metric_column (maior → menor)
+        predicate_ranking = predicate_ranking_dict[bag_name]
+        
+        # Extrai lista ordenada de predicados
+        ordered_predicates = predicate_ranking['Predicate'].tolist()
+        
+        # Filtra apenas predicados que existem neste bag específico
+        # (nem todos predicados do ranking podem estar presentes no bag)
+        ordered_predicates = [p for p in ordered_predicates if p in bag_predicates_dict.keys()]
+        
+        # Se não há predicados válidos neste bag, pula para o próximo
+        if len(ordered_predicates) == 0:
+            continue
+        
+        # 2.2: Cria dicionário de lookup para obter metrica de ranking de cada predicado
+
+        # Isso facilita buscar o valor da métrica pelo nome do predicado
+        # Exemplo: ranking_lookup['Ca ka <= 25.5'] = 0.85
+        ranking_lookup = dict(zip(predicate_ranking['Predicate'], predicate_ranking[metric_column]))
+        
+        # 2.3: Constrói arestas entre predicados consecutivos
+
+        # Para cada par consecutivo (pred_current → pred_next) na lista ordenada:
+        # - Adiciona os nós se não existirem
+        # - Cria aresta com peso = Metrica do predicado de ORIGEM (pred_current)
+        # - Se aresta já existe, ACUMULA o peso (soma as Metricas de diferentes bags)
+        
+        for i in range(len(ordered_predicates) - 1):
+            # Predicado atual (origem da aresta)
+            pred_current = ordered_predicates[i]
+            # Próximo predicado (destino da aresta)
+            pred_next = ordered_predicates[i + 1]
+            
+            # Adiciona nós ao grafo (se já existir, não faz nada)
+            DG.add_node(pred_current, node_type='predicate')
+            DG.add_node(pred_next, node_type='predicate')
+            
+            # Obtém a métrica do predicado de ORIGEM
+            ranking_value = float(ranking_lookup[pred_current])
+            
+            # Verifica se a aresta já existe
+            if DG.has_edge(pred_current, pred_next):
+                # Se existe, ACUMULA o peso (soma as MIs de diferentes bags)
+                DG[pred_current][pred_next]['weight'] += ranking_value
+            else:
+                # Se não existe, cria a aresta com o peso inicial
+                DG.add_edge(pred_current, pred_next, weight=ranking_value, bag=bag_name)
+        
+        # 2.4: Conecta o ÚLTIMO predicado ao nó terminal
+
+        # O último predicado determina a classe final baseada na maioria
+        last_pred = ordered_predicates[-1]
+        
+        # Garante que o nó do último predicado existe
+        # (necessário para bags com apenas 1 predicado, que não entram no loop acima)
+        DG.add_node(last_pred, node_type='predicate')
+        
+        # Obtém o DataFrame de amostras que satisfazem o último predicado
+        df_last = bag_predicates_dict[last_pred]
+        
+        # Conta quantas amostras de cada classe
+        class_counts = df_last['Class_Predicted'].value_counts()
+        
+        # Determina a classe majoritária
+        majority_class = class_counts.idxmax()
+        
+        # Define o nó terminal de destino
+        terminal_node = f'Class_{majority_class}'
+        
+        # Peso da aresta para o terminal = ranking_value do último predicado
+        ranking_last_value = float(ranking_lookup[last_pred])
+        
+        # Acumula ou cria a aresta para o terminal
+        if DG.has_edge(last_pred, terminal_node):
+            DG[last_pred][terminal_node]['weight'] += ranking_last_value
+        else:
+            DG.add_edge(last_pred, terminal_node, weight=ranking_last_value, bag=bag_name)
+
+    # FASE 3: IDENTIFICAÇÃO DE ARESTAS BIDIRECIONAIS
+
+    # Quando bags diferentes sugerem ordens opostas (A→B em um, B→A em outro),
+    # temos arestas bidirecionais que precisam ser resolvidas
+    
+    bidirectional_pairs = []  # Lista para armazenar pares bidirecionais
+    processed = set()         # Set para evitar processar o mesmo par duas vezes
+    
+    # Itera sobre todas as arestas do grafo
+    for u, v in DG.edges():
+        # Verifica se existe a aresta reversa (v → u) E se ainda não processamos este par
+        if DG.has_edge(v, u) and (v, u) not in processed:
+            # Obtém os pesos de ambas direções
+            weight_forward = float(DG[u][v]['weight'])
+            weight_reverse = float(DG[v][u]['weight'])
+            
+            # Armazena informações do par bidirecional
+            bidirectional_pairs.append({
+                'node_A': u,
+                'node_B': v,
+                'weight_A_to_B': weight_forward,
+                'weight_B_to_A': weight_reverse
+            })
+            
+            # Marca ambas direções como processadas
+            processed.add((u, v))
+            processed.add((v, u))
+    
+    print(f"\nTotal de pares bidirecionais encontrados: {len(bidirectional_pairs)}")
+    
+    # FASE 4: RESOLUÇÃO DE ARESTAS BIDIRECIONAIS
+
+    # Critério: mantém a aresta com MAIOR peso (soma de MIs acumuladas)
+    # Em caso de empate: escolha aleatória (controlada por random_state)
+    
+    n_removed = 0  # Contador de arestas removidas
+    
+    for pair in bidirectional_pairs:
+        u = pair['node_A']
+        v = pair['node_B']
+        weight_forward = pair['weight_A_to_B']
+        weight_reverse = pair['weight_B_to_A']
+        
+        if weight_forward > weight_reverse:
+            # A→B é mais forte: remove B→A
+            DG.remove_edge(v, u)
+            if show_details:
+                print(f"Removida aresta {v} -> {u} (peso {weight_reverse:.4f})")
+                print(f"Mantida aresta {u} -> {v} (peso {weight_forward:.4f})\n")
+                print("="*70 + "\n")
+            n_removed += 1
+            
+        elif weight_reverse > weight_forward:
+            # B→A é mais forte: remove A→B
+            DG.remove_edge(u, v)
+            if show_details:
+                print(f"Removida aresta {u} -> {v} (peso {weight_forward:.4f})")
+                print(f"Mantida aresta {v} -> {u} (peso {weight_reverse:.4f})\n")
+                print("="*70 + "\n")
+            n_removed += 1
+            
+        else:
+            # EMPATE: escolha aleatória
+            if np.random.rand() > 0.5:
+                DG.remove_edge(v, u)
+                if show_details:
+                    print(f"Empate! Removida aresta {v} -> {u} (peso {weight_reverse:.4f})")
+                    print(f"Mantida aresta {u} -> {v} (peso {weight_forward:.4f})\n")
+                    print("="*70 + "\n")
+            else:
+                DG.remove_edge(u, v)
+                if show_details:
+                    print(f"Empate! Removida aresta {u} -> {v} (peso {weight_forward:.4f})")
+                    print(f"Mantida aresta {v} -> {u} (peso {weight_reverse:.4f})\n")
+                    print("="*70 + "\n")
+            n_removed += 1
+
+    # FASE 5: RESUMO FINAL
+    print(f"\n{'='*70}")
+    print("RESUMO DO GRAFO CONSTRUÍDO")
+    print(f"{'='*70}")
+    print(f"Total de arestas iniciais: {DG.number_of_edges() + n_removed}")
+    print(f"Total de arestas removidas por bidirecionalidade: {n_removed}")
+    print(f"Arestas bidirecionais restantes: {len(bidirectional_pairs) - n_removed}")
+    print(f"Total de nós predicados: {len([n for n, attr in DG.nodes(data=True) if attr['node_type'] == 'predicate'])}")
+    print(f"Total de nós terminais: {len([n for n, attr in DG.nodes(data=True) if attr['node_type'] == 'terminal'])}")
+    print(f"Métrica utilizada para pesos: {metric_column}\n")
+    
+    return DG
