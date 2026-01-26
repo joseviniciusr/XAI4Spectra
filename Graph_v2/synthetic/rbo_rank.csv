@@ -1,0 +1,5 @@
+Reference;Method;RBO_Score
+Vip;Reg_coef;0.9717524751
+Vip;LRC_perturbation;0.9573464750999999
+Vip;LRC_covariance;0.9254009803066666
+Vip;Shap;0.9184535806399999

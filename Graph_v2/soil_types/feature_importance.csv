@@ -1,0 +1,27 @@
+Vip;Reg_coef;Shap;LRC_perturbation;LRC_covariance
+Fe ka;Fe ka;Fe ka;Fe ka;Fe ka
+Fe kb;Ca ka;Ca ka;Ca ka;Fe kb
+Ti ka;Ti ka;Ti ka;Ti ka;Mn
+Ca ka;Fe kb;Mn;Fe kb;sum Fe
+Mn;Mn;Fe kb;Mn;Ti ka
+sum Fe;Al;Al;background6;Ca ka
+Ti kb;Rh L + Ar;background6;Ti kb;background4
+Al;Ca kb;Fe ka + Ti ka;Al;Rh L + Ar
+Si;K;background7;Rh L + Ar;Ti kb
+background4;Ti kb;background8;sum Fe;Si
+Cr;Cu;background1;Ca kb;Cr
+Rh L + Ar;background6;sum Fe;background7;Cu
+Cu;sum Fe;Rh L + Ar;Si;background8
+Ca kb;Cr;K;K;Al
+background8;P;Cu;Cu;Ca kb
+K;background3;Ca kb;background5;background3
+background3;background7;background3;Fe ka + Ti ka;background1
+P;background5;Si;Cr;K
+background6;Fe ka + Ti ka;S;P;background2
+Fe ka + Ti ka;background2;background2;background8;background7
+background7;Si;P;background3;background6
+background5;background8;background5;background4;P
+background2;S;Ti kb;S;S
+background1;background4;Cr;background2;Fe ka + Ti ka
+S;background1;background4;background1;
+;;;;
