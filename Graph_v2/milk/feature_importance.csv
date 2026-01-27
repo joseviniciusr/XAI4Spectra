@@ -1,0 +1,12 @@
+Vip;Reg_coef;Shap;LRC_perturbation;LRC_covariance
+Ag La;Ag ka;Ag La;Ag La;Ag La
+Ag Lb;Zn;Ag ka;Ag ka;Ag Lb
+Ag ka;Ag La;Ag Lb;Ag Lb;Ag ka
+Zn;Fe;Zn;Bremsstrahlung;Zn
+Ag compton;Ag Lb;Ag compton;Ag compton;Ag compton
+Fe;Bremsstrahlung;Fe;Zn;Fe
+Bremsstrahlung;Ag compton;Bremsstrahlung;Fe;Ca
+Ca;Ca;background;background;Bremsstrahlung
+background;background;Ca;Ca;Cu
+Cu;Cu;Cu;Cu;background
+;;;;
