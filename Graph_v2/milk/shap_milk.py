@@ -1,10 +1,18 @@
-# importing the necessary libraries
+# Importing the necessary libraries
 import pandas as pd
 import numpy as np
 import kennard_stone as ks
+pd.options.plotting.backend = 'plotly'  # setting plotly as the backend for pandas plotting
 
-# loading a soil spectral dataset based on X-ray fluorescence (XRF)
-data_complete = pd.read_csv('XRF_databases/milk/plsda/milk.csv', sep=';') # local copy of Toledo 2022 dataset
+# Add parent directory to sys.path so local module 'synthetic' (one level up) can be imported
+import sys
+from pathlib import Path # for path manipulations
+parent_dir = Path.cwd().parent.parent.resolve() # move two levels up from current working directory
+if str(parent_dir) not in sys.path: # check to avoid duplicates
+    sys.path.insert(0, str(parent_dir)) # insert at the start of sys.path to prioritize local modules
+
+# Loading a soil spectral dataset based on X-ray fluorescence (XRF)
+data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/milk/plsda/milk.csv', sep=';') # local copy of Toledo 2022 dataset
 data = data_complete.loc[:, '2.66':'22.62']
 
 # Creating a new column 'Class' based on the condition of the samples in the 'Type' column being 'Authentic'
@@ -61,7 +69,7 @@ spectral_cuts = [
 import shap
 
 # Para PLSRegression, usamos KernelExplainer porque não há explainer dedicado muito rápido
-explainer_pls = shap.KernelExplainer(plsda_results[3].predict, Xcalclass_prep, njobs=22)
+explainer_pls = shap.KernelExplainer(plsda_results[3].predict, Xcalclass_prep, njobs=2)
 shap_values_pls = explainer_pls(Xcalclass_prep)
 
 shap_global_importance = pd.DataFrame({
