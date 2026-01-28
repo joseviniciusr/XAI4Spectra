@@ -2878,6 +2878,8 @@ def calculate_predicate_perturbation(
     folds_struct: Dict,
     predicates_df: pd.DataFrame,
     spectral_cuts: List[Tuple[str, float, float]],
+    y_calclass: Union[pd.Series, np.ndarray] = None,
+    aim: str = 'regression',
     perturbation_value: float = 0,
     perturbation_mode: str = 'constant',
     stats_source: str = 'full',
@@ -2889,24 +2891,46 @@ def calculate_predicate_perturbation(
     Calcula a importância de cada predicado usando Perturbação Espectral.
     
     Esta função é uma alternativa à permutação. Em vez de permutar valores,
-    ela substitui os valores da zona espectral por um valor fixo (ex: 0), ou de acordo com uma estatistica como a media, mediana, maximo ou minimo da coluna.
+    ela substitui os valores da zona espectral por um valor fixo (ex: 0), ou de acordo 
+    com uma estatística como a média, mediana, máximo ou mínimo da coluna.
     Em seguida ela mede o impacto (mudança) na predição do modelo.
+    
+    Suporta tanto tarefas de REGRESSÃO quanto de CLASSIFICAÇÃO através do parâmetro `aim`.
     
     Parameters
     ----------
     estimator : sklearn estimator
-        Modelo treinado com método predict()
+        Modelo treinado com método predict().
+        Para classificação com certas métricas, também pode requerer:
+        - predict_proba(): para métrica 'probability_shift'
+        - decision_function(): para métrica 'decision_function_shift'
+        
     Xcalclass_prep : pd.DataFrame
         Dataset de calibração pré-processado (n_samples × n_features)
+        
     folds_struct : dict
         Estrutura de folds no formato:
         {'Fold_1': {'rule1': DataFrame, 'rule2': DataFrame, ...}, ...}
+        
     predicates_df : pd.DataFrame
         DataFrame com informações dos predicados (colunas: 'rule', 'zone', etc.)
+        
     spectral_cuts : list of tuples
         Lista de cortes espectrais: [(nome, inicio, fim), ...]
+        
+    y_calclass : pd.Series ou np.ndarray, optional
+        Rótulos verdadeiros das amostras. Obrigatório para métricas de classificação
+        que comparam com ground truth (ex: 'accuracy_drop', 'f1_drop').
+        
+    aim : str, default='regression'
+        Tipo de tarefa:
+        - 'regression': usa predict() e métricas numéricas contínuas
+        - 'classification': usa predict(), predict_proba() ou decision_function()
+                           dependendo da métrica escolhida
+        
     perturbation_value : float, default=0
         Valor usado para perturbar a zona quando perturbation_mode='constant'
+        
     perturbation_mode : str, default='constant'
         Modo de perturbação:
         - 'constant': usa perturbation_value para todas as colunas (comportamento original)
@@ -2914,14 +2938,44 @@ def calculate_predicate_perturbation(
         - 'median': substitui cada coluna pela sua mediana
         - 'min': substitui cada coluna pelo seu valor mínimo
         - 'max': substitui cada coluna pelo seu valor máximo
+        
     stats_source : str, default='full'
         Fonte dos dados para calcular estatísticas:
         - 'full': usa todo o dataset (Xcalclass_prep)
         - 'predicate': usa apenas as amostras do predicado
+        
     metric : str, default='mean_abs_diff'
-        Métrica: 'mean_abs_diff', 'mean_diff' ou 'mean_relative_dev'
+        Métrica para calcular importância. As métricas disponíveis dependem do `aim`:
+        
+        **PARA aim='regression':**
+        - 'mean_abs_diff': Média da diferença absoluta entre predições (|y_orig - y_pert|)
+        - 'mean_diff': Média da diferença com sinal (y_orig - y_pert)
+        - 'mean_relative_dev': Média do desvio relativo ((y_pert - y_orig) / y_orig)
+        
+        **PARA aim='classification':**
+        - 'prediction_change_rate': Proporção de amostras que mudaram de classe após 
+          perturbação. Valores de 0 a 1, onde 1 = todas mudaram. Não requer y_calclass.
+          Usa: estimator.predict()
+          
+        - 'accuracy_drop': Queda na acurácia após perturbação (acc_orig - acc_pert).
+          Valores positivos indicam queda de performance. Requer y_calclass.
+          Usa: estimator.predict()
+          
+        - 'f1_drop': Queda no F1-score após perturbação (f1_orig - f1_pert).
+          Valores positivos indicam queda de performance. Requer y_calclass.
+          Usa: estimator.predict()
+          
+        - 'probability_shift': Média da diferença absoluta nas probabilidades preditas.
+          Mede quanto as probabilidades mudam após perturbação. Não requer y_calclass.
+          Usa: estimator.predict_proba() - REQUER modelo com predict_proba (ex: SVC com probability=True)
+          
+        - 'decision_function_shift': Média da diferença absoluta nos valores da 
+          decision function. Útil para SVM e modelos lineares. Não requer y_calclass.
+          Usa: estimator.decision_function() - REQUER modelo com decision_function (ex: SVC, LinearSVC)
+        
     verbose : bool, default=False
         Se True, imprime detalhes do progresso
+        
     save_detailed_results : bool, default=True
         Se True, salva resultados detalhados
     
@@ -2930,6 +2984,58 @@ def calculate_predicate_perturbation(
     dict
         Dicionário no formato compatível com calculate_predicate_metrics_permutation:
         {'Fold_1': DataFrame({'Predicate': [...], 'Perturbation': [...]}), ...}
+        
+    Notes
+    -----
+    Compatibilidade de métricas com modelos sklearn:
+    
+    | Modelo           | predict_change_rate | accuracy_drop | probability_shift | decision_function_shift |
+    |------------------|---------------------|---------------|-------------------|-------------------------|
+    | SVC              | ✓                   | ✓             | ✓ (probability=True) | ✓                    |
+    | LinearSVC        | ✓                   | ✓             | ✗                 | ✓                       |
+    | RandomForest     | ✓                   | ✓             | ✓                 | ✗                       |
+    | LogisticRegression| ✓                  | ✓             | ✓                 | ✓                       |
+    | KNeighbors       | ✓                   | ✓             | ✓                 | ✗                       |
+    | PLSRegression*   | ✓                   | ✓             | ✗                 | ✗                       |
+    
+    *PLSRegression para classificação usa threshold em predict() contínuo.
+    
+    Examples
+    --------
+    >>> # Exemplo com REGRESSÃO (PLSRegression)
+    >>> results = calculate_predicate_perturbation(
+    ...     estimator=pls_model,
+    ...     Xcalclass_prep=X_prep,
+    ...     folds_struct=folds,
+    ...     predicates_df=predicates,
+    ...     spectral_cuts=cuts,
+    ...     aim='regression',
+    ...     metric='mean_abs_diff'
+    ... )
+    
+    >>> # Exemplo com CLASSIFICAÇÃO (SVC)
+    >>> results = calculate_predicate_perturbation(
+    ...     estimator=svc_model,
+    ...     Xcalclass_prep=X_prep,
+    ...     folds_struct=folds,
+    ...     predicates_df=predicates,
+    ...     spectral_cuts=cuts,
+    ...     y_calclass=y_true,
+    ...     aim='classification',
+    ...     metric='prediction_change_rate'
+    ... )
+    
+    >>> # Exemplo com probability_shift (SVC com probability=True)
+    >>> svc_proba = SVC(kernel='rbf', probability=True)
+    >>> results = calculate_predicate_perturbation(
+    ...     estimator=svc_proba,
+    ...     Xcalclass_prep=X_prep,
+    ...     folds_struct=folds,
+    ...     predicates_df=predicates,
+    ...     spectral_cuts=cuts,
+    ...     aim='classification',
+    ...     metric='probability_shift'
+    ... )
     """
     # VALIDAÇÃO DE ENTRADAS
     
@@ -2949,6 +3055,64 @@ def calculate_predicate_perturbation(
     if missing_cols:
         # Lança erro se faltar alguma coluna obrigatória
         raise KeyError(f"Colunas faltando em predicates_df: {missing_cols}")
+    
+    # Validar aim
+    valid_aims = {'regression', 'classification'}
+    if aim not in valid_aims:
+        raise ValueError(f"aim deve ser um de {valid_aims}. Recebido: {aim}")
+    
+    # Definir métricas válidas para cada aim
+    regression_metrics = {'mean_abs_diff', 'mean_diff', 'mean_relative_dev'}
+    classification_metrics = {
+        'prediction_change_rate', 
+        'accuracy_drop', 
+        'f1_drop',
+        'probability_shift', 
+        'decision_function_shift'
+    }
+    
+    # Validar métrica de acordo com aim
+    if aim == 'regression':
+        if metric not in regression_metrics:
+            raise ValueError(
+                f"Para aim='regression', metric deve ser um de {regression_metrics}. "
+                f"Recebido: '{metric}'"
+            )
+    else:  # classification
+        if metric not in classification_metrics:
+            raise ValueError(
+                f"Para aim='classification', metric deve ser um de {classification_metrics}. "
+                f"Recebido: '{metric}'"
+            )
+        
+        # Verificar requisitos específicos de cada métrica de classificação
+        if metric == 'probability_shift':
+            if not hasattr(estimator, 'predict_proba'):
+                raise ValueError(
+                    f"A métrica 'probability_shift' requer estimator com predict_proba(). "
+                    f"Tipo recebido: {type(estimator)}. "
+                    f"Dica: para SVC, use SVC(probability=True)"
+                )
+        
+        if metric == 'decision_function_shift':
+            if not hasattr(estimator, 'decision_function'):
+                raise ValueError(
+                    f"A métrica 'decision_function_shift' requer estimator com decision_function(). "
+                    f"Tipo recebido: {type(estimator)}. "
+                    f"Modelos compatíveis: SVC, LinearSVC, LogisticRegression, etc."
+                )
+        
+        if metric in ['accuracy_drop', 'f1_drop']:
+            if y_calclass is None:
+                raise ValueError(
+                    f"A métrica '{metric}' requer y_calclass (rótulos verdadeiros). "
+                    f"Forneça y_calclass como parâmetro."
+                )
+    
+    # Converter y_calclass para Series se necessário
+    if y_calclass is not None:
+        if isinstance(y_calclass, np.ndarray):
+            y_calclass = pd.Series(y_calclass)
     
     # INICIALIZAÇÃO
     
@@ -2981,6 +3145,7 @@ def calculate_predicate_perturbation(
         print("=" * 70)
         print("PERTURBATION IMPORTANCE PARA PREDICADOS")
         print("=" * 70)
+        print(f"Tipo de tarefa (aim): {aim}")
         print(f"Modo de perturbação: {perturbation_mode}")
         if perturbation_mode == 'constant':
             print(f"Valor de perturbação: {perturbation_value}")
@@ -2988,6 +3153,8 @@ def calculate_predicate_perturbation(
             print(f"Fonte das estatísticas: {stats_source}")
         print(f"Métrica: {metric}")
         print(f"Total de folds: {total_folds}")
+        if aim == 'classification' and y_calclass is not None:
+            print(f"Classes em y_calclass: {y_calclass.unique().tolist()}")
         print()
     
     # LOOP PRINCIPAL: PROCESSAR CADA FOLD
@@ -3141,15 +3308,13 @@ def calculate_predicate_perturbation(
             # Extrair subconjunto de dados para as amostras do predicado
             X_eval = Xcalclass_prep.iloc[sample_indices].copy()
             
-            # 6. CALCULAR PREDIÇÃO ORIGINAL (SEM PERTURBAÇÃO)
+            # Extrair rótulos verdadeiros se disponíveis (para métricas de classificação)
+            if y_calclass is not None:
+                y_true_eval = y_calclass.iloc[sample_indices]
+            else:
+                y_true_eval = None
             
-            # Fazer predição com dados originais
-            y_pred_original = estimator.predict(X_eval)
-            
-            # Achatar array se necessário
-            y_pred_original = np.array(y_pred_original).flatten()
-            
-            # 7. PERTURBAR ZONA ESPECTRAL E CALCULAR NOVA PREDIÇÃO
+            # 6. PERTURBAR ZONA ESPECTRAL
             
             # Criar cópia dos dados para perturbação
             X_perturbed = X_eval.copy()
@@ -3180,46 +3345,170 @@ def calculate_predicate_perturbation(
                 for col in zone_cols:
                     X_perturbed[col] = col_stats[col]
             
-            # Fazer predição com dados perturbados
-            y_pred_perturbed = estimator.predict(X_perturbed)
+            # 7. CALCULAR IMPORTÂNCIA BASEADA NO AIM E MÉTRICA ESCOLHIDA
             
-            # Achatar array se necessário
-            y_pred_perturbed = np.array(y_pred_perturbed).flatten()
+            if aim == 'regression':
+                # =====================================================================
+                # MODO REGRESSÃO: usa predict() e métricas numéricas contínuas
+                # =====================================================================
+                
+                # Fazer predição com dados originais
+                y_pred_original = estimator.predict(X_eval)
+                y_pred_original = np.array(y_pred_original).flatten()
+                
+                # Fazer predição com dados perturbados
+                y_pred_perturbed = estimator.predict(X_perturbed)
+                y_pred_perturbed = np.array(y_pred_perturbed).flatten()
+                
+                # Calcular importância de acordo com a métrica
+                if metric == 'mean_abs_diff':
+                    # Média da diferença absoluta entre predições
+                    importance = np.mean(np.abs(y_pred_original - y_pred_perturbed))
+                elif metric == 'mean_diff':
+                    # Média da diferença (com sinal)
+                    importance = np.mean(y_pred_original - y_pred_perturbed)
+                elif metric == 'mean_relative_dev':
+                    # Média do desvio relativo (cuidado com divisão por zero)
+                    y_safe = np.where(y_pred_original == 0, np.nan, y_pred_original)
+                    rel_dev = (y_pred_perturbed - y_pred_original) / y_safe
+                    importance = np.nanmean(rel_dev)
+                
+                # Para ranking, usar valor absoluto para métricas com sinal
+                if metric in ['mean_diff', 'mean_relative_dev']:
+                    importance_for_ranking = np.abs(importance)
+                else:
+                    importance_for_ranking = importance
+                    
+            else:  # aim == 'classification'
+                # =====================================================================
+                # MODO CLASSIFICAÇÃO: usa predict(), predict_proba() ou decision_function()
+                # =====================================================================
+                
+                if metric == 'prediction_change_rate':
+                    # -----------------------------------------------------------------
+                    # PREDICTION CHANGE RATE: proporção de amostras que mudaram de classe
+                    # Usa: estimator.predict()
+                    # -----------------------------------------------------------------
+                    
+                    # Fazer predição com dados originais
+                    y_pred_original = estimator.predict(X_eval)
+                    y_pred_original = np.array(y_pred_original).flatten()
+                    
+                    # Fazer predição com dados perturbados
+                    y_pred_perturbed = estimator.predict(X_perturbed)
+                    y_pred_perturbed = np.array(y_pred_perturbed).flatten()
+                    
+                    # Calcular proporção de amostras que mudaram de classe
+                    # Valores de 0 a 1, onde 1 = todas mudaram
+                    importance = np.mean(y_pred_original != y_pred_perturbed)
+                    importance_for_ranking = importance
+                    
+                elif metric == 'accuracy_drop':
+                    # -----------------------------------------------------------------
+                    # ACCURACY DROP: queda na acurácia após perturbação
+                    # Usa: estimator.predict() + y_true
+                    # -----------------------------------------------------------------
+                    
+                    # Fazer predição com dados originais
+                    y_pred_original = estimator.predict(X_eval)
+                    y_pred_original = np.array(y_pred_original).flatten()
+                    
+                    # Fazer predição com dados perturbados
+                    y_pred_perturbed = estimator.predict(X_perturbed)
+                    y_pred_perturbed = np.array(y_pred_perturbed).flatten()
+                    
+                    # Calcular acurácia original e após perturbação
+                    acc_original = accuracy_score(y_true_eval, y_pred_original)
+                    acc_perturbed = accuracy_score(y_true_eval, y_pred_perturbed)
+                    
+                    # Queda na acurácia (positivo = piora)
+                    importance = acc_original - acc_perturbed
+                    importance_for_ranking = np.abs(importance)
+                    
+                elif metric == 'f1_drop':
+                    # -----------------------------------------------------------------
+                    # F1 DROP: queda no F1-score após perturbação
+                    # Usa: estimator.predict() + y_true
+                    # -----------------------------------------------------------------
+                    
+                    # Fazer predição com dados originais
+                    y_pred_original = estimator.predict(X_eval)
+                    y_pred_original = np.array(y_pred_original).flatten()
+                    
+                    # Fazer predição com dados perturbados
+                    y_pred_perturbed = estimator.predict(X_perturbed)
+                    y_pred_perturbed = np.array(y_pred_perturbed).flatten()
+                    
+                    # Calcular F1 original e após perturbação
+                    # Usa average='weighted' para suportar multiclasse
+                    f1_original = f1_score(y_true_eval, y_pred_original, average='weighted')
+                    f1_perturbed = f1_score(y_true_eval, y_pred_perturbed, average='weighted')
+                    
+                    # Queda no F1 (positivo = piora)
+                    importance = f1_original - f1_perturbed
+                    importance_for_ranking = np.abs(importance)
+                    
+                elif metric == 'probability_shift':
+                    # -----------------------------------------------------------------
+                    # PROBABILITY SHIFT: diferença nas probabilidades preditas
+                    # Usa: estimator.predict_proba()
+                    # -----------------------------------------------------------------
+                    
+                    # Obter probabilidades originais
+                    prob_original = estimator.predict_proba(X_eval)
+                    
+                    # Obter probabilidades após perturbação
+                    prob_perturbed = estimator.predict_proba(X_perturbed)
+                    
+                    # Calcular média da diferença absoluta nas probabilidades
+                    # Soma as diferenças de todas as classes e faz média das amostras
+                    importance = np.mean(np.abs(prob_original - prob_perturbed))
+                    importance_for_ranking = importance
+                    
+                    # Para verbose, salvar as predições de classe também
+                    y_pred_original = estimator.predict(X_eval)
+                    y_pred_perturbed = estimator.predict(X_perturbed)
+                    
+                elif metric == 'decision_function_shift':
+                    # -----------------------------------------------------------------
+                    # DECISION FUNCTION SHIFT: diferença nos valores da decision function
+                    # Usa: estimator.decision_function()
+                    # Útil para SVM e modelos lineares
+                    # -----------------------------------------------------------------
+                    
+                    # Obter valores da decision function originais
+                    df_original = estimator.decision_function(X_eval)
+                    df_original = np.array(df_original)
+                    
+                    # Achatar se necessário (para classificação binária)
+                    if df_original.ndim == 1:
+                        df_original = df_original.flatten()
+                    
+                    # Obter valores da decision function após perturbação
+                    df_perturbed = estimator.decision_function(X_perturbed)
+                    df_perturbed = np.array(df_perturbed)
+                    
+                    # Achatar se necessário
+                    if df_perturbed.ndim == 1:
+                        df_perturbed = df_perturbed.flatten()
+                    
+                    # Calcular média da diferença absoluta
+                    importance = np.mean(np.abs(df_original - df_perturbed))
+                    importance_for_ranking = importance
+                    
+                    # Para verbose, salvar as predições de classe também
+                    y_pred_original = estimator.predict(X_eval)
+                    y_pred_perturbed = estimator.predict(X_perturbed)
             
-            # 8. CALCULAR IMPORTÂNCIA BASEADA NA MÉTRICA ESCOLHIDA
+            # 8. ARMAZENAR RESULTADOS
             
-            # Calcular importância de acordo com a métrica
-            if metric == 'mean_abs_diff':
-                # Média da diferença absoluta entre predições
-                importance = np.mean(np.abs(y_pred_original - y_pred_perturbed))
-            elif metric == 'mean_diff':
-                # Média da diferença (com sinal)
-                importance = np.mean(y_pred_original - y_pred_perturbed)
-            elif metric == 'mean_relative_dev':
-                # Média do desvio relativo (cuidado com divisão por zero)
-                y_safe = np.where(y_pred_original == 0, np.nan, y_pred_original)
-                rel_dev = (y_pred_perturbed - y_pred_original) / y_safe
-                importance = np.nanmean(rel_dev)
-            else:
-                # Métrica não reconhecida, usar mean_abs_diff como fallback
-                if verbose:
-                    print(f"    AVISO: métrica '{metric}' não reconhecida, usando mean_abs_diff")
-                importance = np.mean(np.abs(y_pred_original - y_pred_perturbed))
-            
-            # 9. ARMAZENAR RESULTADOS
-            
-            # Para ranking, usar valor absoluto para métricas com sinal
-            if metric in ['mean_diff', 'mean_relative_dev']:
-                # Usar valor absoluto para ordenação
-                fold_metrics[pred_rule] = np.abs(importance)
-            else:
-                # mean_abs_diff já é absoluto
-                fold_metrics[pred_rule] = importance
+            # Armazenar importância para ranking
+            fold_metrics[pred_rule] = importance_for_ranking
             
             # Salvar detalhes completos
             fold_detailed[pred_rule] = {
                 'importance': importance,
-                'importance_abs': np.abs(importance),
+                'importance_abs': np.abs(importance) if isinstance(importance, (int, float)) else importance,
                 'n_samples': n_samples,
                 'zone_columns': zone_cols,
                 'n_zone_features': len(zone_cols),
@@ -3227,7 +3516,9 @@ def calculate_predicate_perturbation(
                 'zone_start': zone_start,
                 'zone_end': zone_end,
                 'perturbation_mode': perturbation_mode,
-                'stats_source': stats_source if perturbation_mode != 'constant' else None
+                'stats_source': stats_source if perturbation_mode != 'constant' else None,
+                'aim': aim,
+                'metric': metric
             }
             
             # Log da importância calculada
@@ -3268,6 +3559,8 @@ def calculate_predicate_perturbation(
         print("\n" + "=" * 70)
         print("RESUMO")
         print("=" * 70)
+        print(f"Tipo de tarefa (aim): {aim}")
+        print(f"Métrica utilizada: {metric}")
         print(f"Folds processados: {total_folds}")
         print(f"Predicados processados: {total_predicates_processed}")
         print(f"Predicados ignorados: {total_predicates_skipped}")
@@ -3298,7 +3591,9 @@ def calculate_predicate_perturbation(
                     'n_samples': pred_data['n_samples'],
                     'n_zone_features': pred_data.get('n_zone_features', 0),
                     'zone_name': pred_data.get('zone_name', None),
-                    'skip_reason': pred_data.get('skip_reason', None)
+                    'skip_reason': pred_data.get('skip_reason', None),
+                    'aim': pred_data.get('aim', aim),
+                    'metric': pred_data.get('metric', metric)
                 })
         
         # Criar DataFrame de resultados detalhados
