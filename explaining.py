@@ -1126,10 +1126,15 @@ def calculate_lrc_single_graph(graph, predicates_df):
     print(f"\nProcessando LRC do grafo...")
     
     # 1. CALCULAR LRC PARA CADA NÓ
-    local_reaching_centrality = {
-        node: nx.local_reaching_centrality(graph, node, weight='weight')
-        for node in graph.nodes()
-    }
+    local_reaching_centrality = {}
+    for node in graph.nodes():
+        try:
+            lrc_val = nx.local_reaching_centrality(graph, node, weight='weight')
+        except ZeroDivisionError:
+            # Ocorre quando o cálculo interno do NetworkX tenta dividir por zero.
+            # Neste caso, fixamos a LRC como 0.0 para manter a execução e a consistência.
+            lrc_val = 0.0
+        local_reaching_centrality[node] = lrc_val
     
     # Ordenar por LRC (decrescente)
     sorted_lrc = sorted(
