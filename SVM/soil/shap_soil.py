@@ -77,28 +77,17 @@ spectral_cuts = [
 ('background13', 13.1, 15.0)
 ]
 y_pred = svm_model[6]['SVC'].values # using the continuous predictions from SVM, extracting as 1D array
-import explaining as exp
-spectral_zones_class = exp.extract_spectral_zones(Xcalclass_prep, spectral_cuts)
-zone_sums_df = exp.aggregate_spectral_zones(spectral_zones_class, aggregator='extreme')
-predicates_quantiles = exp.predicates_by_quantiles(zone_sums_df, [0.2, 0.4, 0.6, 0.8])
-co_occurrence_matrix_df = predicates_quantiles[2]
-predicate_info_dict = exp.create_predicate_info_dict(
-    predicates_df=predicates_quantiles[0],
-    predicate_indicator_df=predicates_quantiles[1],
-    zone_aggregated_df=zone_sums_df,
-    y_predicted_numeric=y_pred
-)
 
 import shap
 
-# Para PLSRegression, usamos KernelExplainer porque não há explainer dedicado muito rápido
-explainer_pls = shap.KernelExplainer(svm_model[3].predict_proba, Xcalclass_prep, njobs=22)
-shap_values_pls = explainer_pls(Xcalclass_prep)
+model_predict_proba = lambda x: svm_model[3].predict_proba(x)[:, 1] # o 1 é a probabilidade da classe positiva
+explainer = shap.KernelExplainer(model_predict_proba, Xcalclass_prep)  # using a subset of calibration data as background for SHAP
+shap_exp = explainer(Xcalclass_prep)  # explain a subset of calibration data
 
+shap_values = shap_exp.values
 shap_global_importance = pd.DataFrame({
-    'energy': Xpredclass_prep.columns,
-    'Mean_Abs_SHAP': np.abs(shap_values_pls.values).mean(axis=0)}) # tomando a importancia global como a media dos valores absolutos dos valores SHAP para cada feature
-shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False, inplace=True)
+    'energy': Xcalclass_prep.columns,
+    'Mean_Abs_SHAP': np.abs(shap_values).mean(axis=0)})
 
 # vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
 energy_to_zone_shap = {}
@@ -110,6 +99,6 @@ for zone_name, start, end in spectral_cuts:
 shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_zone_shap)
 
 # agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
-shap_unique_df = shap_global_importance.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
-shap_unique_df = shap_unique_df.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
+shap_unique_df = shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
+shap_unique_df = shap_unique_df.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
 shap_unique_df.to_csv('shap_soil.csv', index=False, sep=';')
