@@ -3460,9 +3460,30 @@ def calculate_predicate_perturbation(
                     # Obter probabilidades após perturbação
                     prob_perturbed = estimator.predict_proba(X_perturbed)
                     
-                    # Calcular média da diferença absoluta nas probabilidades
-                    # Soma as diferenças de todas as classes e faz média das amostras
-                    importance = np.mean(np.abs(prob_original - prob_perturbed))
+                    # Calcular diferença nas probabilidades
+                    # IMPORTANTE: Para classificação, predict_proba retorna (n_samples, n_classes)
+                    # onde cada linha soma 1.0. Para evitar contar mudanças redundantes,
+                    # calculamos a mudança POR AMOSTRA (soma das diferenças absolutas por linha)
+                    # e depois fazemos a média entre amostras.
+                    #
+                    # Exemplo binário: [0.7, 0.3] → [0.6, 0.4]
+                    # - Sem correção: mean(|0.7-0.6| + |0.3-0.4|) = mean(0.1 + 0.1) = 0.2 ❌
+                    # - Com correção: mean(|0.7-0.6| + |0.3-0.4|) / 2 = 0.1 ✓
+                    #
+                    # Para k classes, dividimos por k para normalizar e obter valores
+                    # comparáveis entre problemas binários e multiclasse.
+                    
+                    n_classes = prob_original.shape[1]
+                    
+                    # Calcular mudança total por amostra (soma sobre classes)
+                    shift_per_sample = np.sum(np.abs(prob_original - prob_perturbed), axis=1)
+                    
+                    # Normalizar pelo número de classes (evita contar mudanças redundantes)
+                    # Dividir por 2 porque mudanças em probabilidades que somam 1 são simétricas
+                    shift_per_sample_normalized = shift_per_sample / 2.0
+                    
+                    # Média sobre todas as amostras
+                    importance = np.mean(shift_per_sample_normalized)
                     importance_for_ranking = importance
                     
                     # Para verbose, salvar as predições de classe também
