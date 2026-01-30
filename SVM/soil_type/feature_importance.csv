@@ -1,0 +1,27 @@
+SVM_pvector;Shap;Permutation;LRC_perturbation;LRC_covariance
+Fe ka;Fe ka;Fe ka;Fe ka;Fe ka
+Fe kb;Ti ka;Ti ka;Ti ka;Fe kb
+K;Ca ka;Fe kb;Fe kb;Mn
+Mn;Fe kb;Ca ka;Ca ka;sum Fe
+sum Fe;background6;K;K;Ti ka
+Si;Al;Mn;background6;Si
+Rh L + Ar;background8;Al;background3;Rh L + Ar
+Ti kb;sum Fe;Si;Si;background4
+Cu;Cr;Ti kb;Ca kb;background8
+Ti ka;background7;Rh L + Ar;background8;Ti kb
+background4;P;Cu;background4;Cu
+Cr;S;sum Fe;Mn;Cr
+Al;background5;Cr;Al;Ca ka
+P;Ti kb;P;Rh L + Ar;Ca kb
+background6;Ca kb;background4;background7;Al
+background7;Fe ka + Ti ka;background3;S;background3
+background5;background2;Ca kb;Ti kb;background1
+Ca ka;Mn;Fe ka + Ti ka;sum Fe;background6
+Fe ka + Ti ka;Cu;background6;Cr;K
+background2;background4;background7;background1;background2
+background8;Rh L + Ar;background5;background5;background7
+Ca kb;background1;background2;background2;P
+background3;background3;background8;Cu;background5
+background1;K;background1;Fe ka + Ti ka;S
+S;Si;S;P;
+;;;;
