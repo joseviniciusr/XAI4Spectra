@@ -12,18 +12,19 @@ if str(parent_dir) not in sys.path: # check to avoid duplicates
     sys.path.insert(0, str(parent_dir)) # insert at the start of sys.path to prioritize local modules
 
 # Loading a soil spectral dataset based on X-ray fluorescence (XRF)
-data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/soil/plsda/soil.csv', sep=';') # local copy of Toledo 2022 dataset (os ... indica para omitir o caminho longo)
-data = data_complete.loc[:, '1':'15']
+data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/forage/plsda/forage.csv', sep=';') # local copy of Toledo 2022 dataset (os ... indica para omitir o caminho longo)
+data = data_complete.loc[:, '1.4':'20.81']
+
 # Split dataset by class and create calibration/prediction sets using Kennard-Stone (as in original pipeline)
 data_A = data_complete[data_complete['Class'] == 'A'].reset_index(drop=True)
 data_B = data_complete[data_complete['Class'] == 'B'].reset_index(drop=True)
 
 # splitting the data into calibration and prediction sets by kennard-stone algorithm
-XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1':'15'], test_size=0.30)  # class A
+XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1.4':'20.81'], test_size=0.30)  # class A
 XA_cal = XA_cal.reset_index(drop=True)
 XA_pred = XA_pred.reset_index(drop=True)
 
-XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1':'15'], test_size=0.30)  # class B
+XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1.4':'20.81'], test_size=0.30)  # class B
 XB_cal = XB_cal.reset_index(drop=True)
 XB_pred = XB_pred.reset_index(drop=True)
 
@@ -37,13 +38,12 @@ import preprocessings as prepr  # preprocessing methods for XRF data
 
 Xcalclass_prep, mean_calclass, mean_calclass_poisson  = prepr.poisson(Xcalclass, mc=True)
 Xpredclass_prep = ((Xpredclass/np.sqrt(mean_calclass)) - mean_calclass_poisson)
-# PLS-DA with optimized latent variables
 from modeling import pls_optimized
 
 plsda_results = pls_optimized(
     Xcalclass_prep, 
     ycalclass,
-    LVmax=4,
+    LVmax=3,
     Xpred=Xpredclass_prep,
     ypred=ypredclass,
     aim='classification',
@@ -51,37 +51,29 @@ plsda_results = pls_optimized(
 )
 
 # establishing spectral cuts based on expert knowledge of XRF spectra
+# establishing spectral cuts based on expert knowledge of XRF spectra
 spectral_cuts = [
-('background1', 1.0, 1.33),
-('Al', 1.33, 1.63),
+('Al', 1.40, 1.63),
 ('Si', 1.63, 1.86),
-('P', 1.86, 2.10),
-('background2', 2.10, 2.19),
-('S', 2.19, 2.44),
-('background3', 2.44, 2.55),
-('Rh L + Ar', 2.55, 3.10),
-('background4', 3.10, 3.21),
-('K', 3.21, 3.42),
-('background5', 3.42, 3.53),
-('Ca ka', 3.53, 3.84),
-('Ca kb', 3.84, 4.14),
-('background6', 4.14, 4.37),
+('P', 1.86, 2.16),
+('S', 2.16, 2.44),
+('Rh L + Ar', 2.44, 3.10),
+('K', 3.10, 3.46),
+('Ca ka', 3.46, 3.86),
+('Ca kb', 3.86, 4.16),
+('background1', 4.14, 4.37),
 ('Ti ka', 4.37, 4.66),
-('background7', 4.66, 4.75),
-('Ti kb', 4.75, 5.12),
-('Cr', 5.12, 5.77),
-('Mn', 5.77, 6.02),
-('background8', 6.02, 6.13),
-('Fe ka', 6.13, 6.68),
-('background9', 6.68, 6.80),
-('Fe kb', 6.80, 7.30),
-('background10', 7.30, 7.91),
-('Cu', 7.91, 8.20),
-('background11', 8.20, 10.69),
-('Fe ka + Ti ka', 10.69, 11.14),
-('background12', 11.14, 12.55),
-('sum Fe' , 12.55, 13.1),
-('background13', 13.1, 15.0)
+('Ti kb', 4.66, 5.08),
+('background2', 5.08, 5.72),
+('Mn', 5.72, 6.10),
+('Fe ka', 6.10, 6.76),
+('Fe kb', 6.76, 7.20),
+('Ni', 7.20, 7.69),
+('background3', 7.69, 13.10),
+('sum Fe' , 13.10, 13.63),
+('background4', 13.63, 18.0),
+('Compton scattering', 18.0, 19.70),
+('Rayleight scattering', 19.70, 20.80)
 ]
 
 import shap
@@ -107,4 +99,4 @@ shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_
 # agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
 shap_unique_df = shap_global_importance.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
 shap_unique_df = shap_unique_df.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
-shap_unique_df.to_csv('shap_soil.csv', index=False, sep=';')
+shap_unique_df.to_csv('shap_forage.csv', index=False, sep=';')
