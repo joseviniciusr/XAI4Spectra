@@ -555,3 +555,200 @@ def svm_optimized(Xcal, ycal, Xpred=None, ypred=None, aim='regression', **svm_pa
 
     else:
         raise ValueError("Parameter `aim` must be 'regression' or 'classification'.")
+
+
+def mlp_optimized(Xcal, ycal, Xpred=None, ypred=None, aim='regression', **mlp_params):
+    """
+    ## MLP optimized
+    Function to fit an MLP regression (MLPRegressor) or MLP classification (MLPClassifier) model.
+    It calculates various performance metrics for calibration and prediction (if provided) datasets.
+    
+    **Parameters**:
+    - **Xcal** : pd.DataFrame
+        Calibration dataset features.
+    - **ycal** : pd.Series or np.ndarray
+        Calibration dataset target variable (regression) or class labels (classification).
+    - **Xpred** : pd.DataFrame, optional
+        Prediction dataset features. Default is None.
+    - **ypred** : pd.Series or np.ndarray, optional
+        Prediction dataset target variable (regression) or class labels (classification). Default is None.
+    - **aim** : str, optional
+        Type of analysis: 'regression' for MLPRegressor or 'classification' for MLPClassifier. Default is 'regression'.
+    - **mlp_params** : dict, optional
+        Additional hyperparameters for MLP (e.g., hidden_layer_sizes, activation, solver, alpha, max_iter, etc.).
+        If not provided, sklearn defaults will be used.
+        
+    **Returns**:
+    - **df_results** : pd.DataFrame
+        DataFrame containing performance metrics.
+    - **calres** : pd.DataFrame
+        DataFrame containing predicted values for the calibration dataset.
+    - **predres** : pd.DataFrame
+        DataFrame containing predicted values for the prediction dataset (if provided).
+    - **model** : fitted MLP model
+        The fitted MLPRegressor or MLPClassifier model.
+    
+    For classification (aim='classification'), additional returns:
+    - **calres_proba** : pd.DataFrame
+        DataFrame with predict_proba outputs for calibration (probability of positive class).
+    - **predres_proba** : pd.DataFrame
+        DataFrame with predict_proba outputs for prediction (if provided).
+    """
+
+    import numpy as np
+    import pandas as pd
+
+    if aim == 'regression':  # regression (MLPRegressor)
+        from sklearn.neural_network import MLPRegressor
+        from sklearn.metrics import mean_squared_error, r2_score
+        from scipy.stats import iqr
+        
+        results = []  # list to store results
+        calres = pd.DataFrame(index=range(len(ycal)))  # calibration results
+        predres = pd.DataFrame(index=range(len(ypred))) if (Xpred is not None and ypred is not None) else None
+
+        # fit MLPRegressor model
+        mlp = MLPRegressor(**mlp_params)
+        mlp.fit(Xcal, ycal)
+        y_cal = mlp.predict(Xcal).flatten()
+        calres['MLP'] = y_cal
+
+        # calibration metrics
+        R2_cal = r2_score(ycal, y_cal)
+        r2_cal = np.corrcoef(ycal, y_cal)[0, 1] ** 2
+        rmse_cal = np.sqrt(mean_squared_error(ycal, y_cal))
+
+        # prediction set metrics (if provided)
+        if Xpred is not None and ypred is not None:
+            y_pred = mlp.predict(Xpred).flatten()
+            predres['MLP'] = y_pred
+
+            R2_pred = r2_score(ypred, y_pred)
+            r2_pred = np.corrcoef(ypred, y_pred)[0, 1] ** 2
+            rmsep = np.sqrt(mean_squared_error(ypred, y_pred))
+            rpd_pred = ypred.std() / rmsep if rmsep != 0 else np.nan
+            rpiq_pred = iqr(ypred, rng=(25, 75)) / rmsep if rmsep != 0 else np.nan
+            bias_pred = np.sum(ypred - y_pred) / ypred.shape[0]
+            SDV_pred = (ypred - y_pred) - bias_pred
+            SDV_pred = np.sqrt(np.sum(SDV_pred * SDV_pred) / (ypred.shape[0] - 1)) if ypred.shape[0] > 1 else np.nan
+            tbias_pred = abs(bias_pred) * (np.sqrt(ypred.shape[0]) / SDV_pred) if SDV_pred not in (0, np.nan) else np.nan
+        else:
+            R2_pred = r2_pred = rmsep = rpd_pred = rpiq_pred = bias_pred = tbias_pred = None
+
+        results.append({
+            'Model': 'MLP',
+            'R2_Cal': R2_cal,
+            'r2_Cal': r2_cal,
+            'RMSEC': rmse_cal,
+            'R2_Pred': R2_pred,
+            'r2_Pred': r2_pred,
+            'RMSEP': rmsep,
+            'RPD_Pred': rpd_pred,
+            'RPIQ_Pred': rpiq_pred,
+            'Bias_Pred': bias_pred,
+            'tbias_Pred': tbias_pred
+        })
+
+        model = mlp
+        df_results = pd.DataFrame(results)
+        calres.insert(0, 'Ref', np.array(ycal))
+        if predres is not None:
+            predres.insert(0, 'Ref', np.array(ypred))
+
+        return df_results, calres, predres, model
+
+    elif aim == 'classification':  # classification (MLPClassifier)
+        from sklearn.neural_network import MLPClassifier
+        from sklearn.metrics import accuracy_score, confusion_matrix
+
+        results = []
+        calres = pd.DataFrame(index=range(len(ycal)))  # calibration results (class labels)
+        predres = pd.DataFrame(index=range(len(ypred))) if (Xpred is not None and ypred is not None) else None
+
+        # DataFrames for numeric outputs
+        calres_proba = pd.DataFrame(index=range(len(ycal)))  # predict_proba outputs
+        predres_proba = pd.DataFrame(index=range(len(ypred))) if (Xpred is not None and ypred is not None) else None
+
+        # ensure binary classes
+        ycal_series = pd.Series(ycal).reset_index(drop=True)
+        unique_labels = ycal_series.unique()
+        if len(unique_labels) != 2:
+            raise ValueError(f"MLPClassifier (this function) expects 2 classes (binary). Found: {unique_labels}")
+
+        label_to_num = {lab: idx for idx, lab in enumerate(unique_labels)}
+        num_to_label = {idx: lab for lab, idx in label_to_num.items()}
+       
+        # prepare ycal numeric
+        ycal_numeric = np.array([label_to_num[i] for i in ycal])
+
+        # prepare ypred numeric if provided
+        ypred_numeric = None
+        if ypred is not None:
+            ypred_numeric = np.array([label_to_num[i] for i in ypred])
+
+        # fit MLPClassifier model
+        mlp = MLPClassifier(**mlp_params)
+        mlp.fit(Xcal, ycal_numeric)
+
+        # calibration predictions
+        y_cal_pred = mlp.predict(Xcal)
+        y_cal_class = np.array([num_to_label[i] for i in y_cal_pred])
+        calres['MLP'] = y_cal_class
+
+        # calibration numeric outputs
+        y_cal_proba = mlp.predict_proba(Xcal)[:, 1]  # probability of positive class
+        calres_proba['MLP'] = y_cal_proba
+
+        # calibration metrics
+        acc_cal = accuracy_score(ycal_numeric, y_cal_pred)
+        cm_cal = confusion_matrix(ycal_numeric, y_cal_pred)
+        if cm_cal.size == 4:
+            tn, fp, fn, tp = cm_cal.ravel()
+        else:
+            tn = fp = fn = tp = np.nan
+        sensitivity_cal = tp / (tp + fn) if (tp + fn) > 0 else np.nan
+        specificity_cal = tn / (tn + fp) if (tn + fp) > 0 else np.nan
+
+        # prediction set (if provided)
+        if Xpred is not None and ypred is not None:
+            y_pred_pred = mlp.predict(Xpred)
+            y_pred_class = np.array([num_to_label[i] for i in y_pred_pred])
+            predres['MLP'] = y_pred_class
+
+            # prediction numeric outputs
+            y_pred_proba = mlp.predict_proba(Xpred)[:, 1]
+            predres_proba['MLP'] = y_pred_proba
+
+            acc_pred = accuracy_score(ypred_numeric, y_pred_pred)
+            cm_pred = confusion_matrix(ypred_numeric, y_pred_pred)
+            if cm_pred.size == 4:
+                tn_p, fp_p, fn_p, tp_p = cm_pred.ravel()
+            else:
+                tn_p = fp_p = fn_p = tp_p = np.nan
+            sensitivity_pred = tp_p / (tp_p + fn_p) if (tp_p + fn_p) > 0 else np.nan
+            specificity_pred = tn_p / (tn_p + fp_p) if (tn_p + fp_p) > 0 else np.nan
+        else:
+            acc_pred = sensitivity_pred = specificity_pred = cm_pred = None
+
+        results.append({
+            'Model': 'MLP',
+            'Accuracy Cal': acc_cal,
+            'Sensitivity Cal': sensitivity_cal,
+            'Specificity Cal': specificity_cal,
+            'CM Cal': cm_cal,
+            'Accuracy Pred': acc_pred,
+            'Sensitivity Pred': sensitivity_pred,
+            'Specificity Pred': specificity_pred,
+            'CM Pred': cm_pred
+        })
+
+        model = mlp
+        df_results = pd.DataFrame(results)
+        calres.insert(0, 'Ref', np.array(ycal))
+        if predres is not None:
+            predres.insert(0, 'Ref', np.array(ypred))
+
+        return df_results, calres, predres, model, calres_proba, predres_proba
+
+    else:
+        raise ValueError("Parameter `aim` must be 'regression' or 'classification'.")
