@@ -1,0 +1,26 @@
+SVM_pvector;Permutation;LRC_perturbation;LRC_covariance
+background1;Cl;K;Cu
+Ga;Mo rayleigh scattering;background1;Cl
+background6;Mo compton scattering;Ca ka;background7
+Mo rayleigh scattering;Si;background7;Ni
+Ti;Ca ka;Fe ka;Mo rayleigh scattering
+background7;background1;Cl;Zn ka
+background5;Fe ka;Mo compton scattering;Mo compton scattering
+Fe ka;Ga;Zn ka;background3
+Cl;Zn ka;Si;Ca ka
+Mo compton scattering;background7;Ga;Si
+Si;Cu;background6;Ca kb
+Ca ka;Ni;Ni;background2
+background4;background6;Cu;K
+background3;Zn kb;Mo rayleigh scattering;Pb Lb
+background2;Fe kb;background5;Fe ka
+Pb La;Ti;Ti;Fe kb
+Pb Lb;Pb La;Pb La;Pb La
+Ni;background4;Fe kb;background4
+Ca kb;background3;background4;Ga
+Cu;background5;background3;Ti
+Fe kb;Pb Lb;Ca kb;Zn kb
+Zn ka;Ca kb;background2;background6
+Zn kb;background2;Pb Lb;background1
+;;Zn kb;background5
+;;;
