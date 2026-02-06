@@ -73,7 +73,7 @@ spectral_cuts = [
 
 import shap
 
-model_predict_proba = lambda x: svm_model[3].predict_proba(x)[:, 1] # o 1 é a probabilidade da classe positiva
+model_predict_proba = lambda x: mlp_model[3].predict_proba(x)[:, 1] # o 1 é a probabilidade da classe positiva
 explainer = shap.KernelExplainer(model_predict_proba, Xcalclass_prep)  # using a subset of calibration data as background for SHAP
 shap_exp = explainer(Xcalclass_prep)  # explain a subset of calibration data
 

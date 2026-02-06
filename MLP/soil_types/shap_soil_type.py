@@ -49,7 +49,6 @@ mlp_model = mlp_optimized(Xcalclass_prep, ycalclass, Xpredclass_prep, ypredclass
                           learning_rate='adaptive',
                           max_iter=10,
                           random_state=1)
-mlp_model[0]
 
 # establishing spectral cuts based on expert knowledge of XRF spectra
 spectral_cuts = [

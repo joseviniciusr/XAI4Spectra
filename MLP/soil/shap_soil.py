@@ -49,7 +49,6 @@ mlp_model = mlp_optimized(Xcalclass_prep, ycalclass, Xpredclass_prep, ypredclass
                           max_iter=10,
                           random_state=1)
 
-mlp_model[0]# establishing spectral cuts based on expert knowledge of XRF spectra
 spectral_cuts = [
 ('background1', 1.0, 1.33),
 ('Al', 1.33, 1.63),
@@ -82,7 +81,6 @@ spectral_cuts = [
 ('sum Fe' , 12.55, 13.1),
 ('background13', 13.1, 15.0)
 ]
-y_pred = mlp_model[6]['SVC'].values # using the continuous predictions from mlp, extracting as 1D array
 
 import shap
 
