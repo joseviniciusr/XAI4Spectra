@@ -1,0 +1,19 @@
+Shap;Permutation;LRC_perturbation;LRC_covariance
+Ti ka;Fe ka;Ca ka;Fe ka
+Ca ka;Ca ka;Ti ka;Ca ka
+Fe ka;Ti ka;background3;Fe kb
+Cu ka;Cu ka;Ag ka scattering;Ti ka
+Ti kb;Fe kb;Cu ka;Ca kb
+Fe kb;Ti kb;Ti kb;Cu ka
+Ag ka scattering;Ca kb;background1;Ti kb
+Ca kb;Ag ka scattering;Fe kb;Cu kb
+background4;Cu kb;Fe ka;background1
+background6;background3;Ca kb;Zn ka
+background5;Zn ka;Zn kb;Ag ka scattering
+Zn kb;background1;Ar ka + Ag L;background3
+Cu kb;Zn kb;Zn ka;background2
+background1;Ar ka + Ag L;Cu kb;Zn kb
+Ar ka + Ag L;background2;background2;Ar ka + Ag L
+background2;;;
+background3;;;
+Zn ka;;;
