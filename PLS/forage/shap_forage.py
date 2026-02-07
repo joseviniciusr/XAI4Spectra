@@ -12,19 +12,19 @@ if str(parent_dir) not in sys.path: # check to avoid duplicates
     sys.path.insert(0, str(parent_dir)) # insert at the start of sys.path to prioritize local modules
 
 # Loading a soil spectral dataset based on X-ray fluorescence (XRF)
-data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/soil/plsda/soil.csv', sep=';') # local copy of Toledo 2022 dataset (os ... indica para omitir o caminho longo)
-data = data_complete.loc[:, '1.32':'13.1']
+data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/forage/plsda/forage.csv', sep=';') # local copy of Toledo 2022 dataset (os ... indica para omitir o caminho longo)
+data = data_complete.loc[:, '1.4':'20.81']
 
 # Split dataset by class and create calibration/prediction sets using Kennard-Stone (as in original pipeline)
 data_A = data_complete[data_complete['Class'] == 'A'].reset_index(drop=True)
 data_B = data_complete[data_complete['Class'] == 'B'].reset_index(drop=True)
 
 # splitting the data into calibration and prediction sets by kennard-stone algorithm
-XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1.32':'13.1'], test_size=0.30)  # class A
+XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1.4':'20.81'], test_size=0.30)  # class A
 XA_cal = XA_cal.reset_index(drop=True)
 XA_pred = XA_pred.reset_index(drop=True)
 
-XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1.32':'13.1'], test_size=0.30)  # class B
+XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1.4':'20.81'], test_size=0.30)  # class B
 XB_cal = XB_cal.reset_index(drop=True)
 XB_pred = XB_pred.reset_index(drop=True)
 
@@ -38,25 +38,54 @@ import preprocessings as prepr  # preprocessing methods for XRF data
 
 Xcalclass_prep, mean_calclass, mean_calclass_poisson  = prepr.poisson(Xcalclass, mc=True)
 Xpredclass_prep = ((Xpredclass/np.sqrt(mean_calclass)) - mean_calclass_poisson)
+from modeling import pls_optimized
 
+plsda_results = pls_optimized(
+    Xcalclass_prep, 
+    ycalclass,
+    LVmax=3,
+    Xpred=Xpredclass_prep,
+    ypred=ypredclass,
+    aim='classification',
+    cv=10
+)
 
-from modeling import svm_optimized
-
-svm_model = svm_optimized(Xcalclass_prep, ycalclass, Xpredclass_prep, ypredclass, aim='classification', kernel='rbf')
 # establishing spectral cuts based on expert knowledge of XRF spectra
-
-y_pred = svm_model[6]['SVC'].values # using the continuous predictions from SVM, extracting as 1D array
+# establishing spectral cuts based on expert knowledge of XRF spectra
+spectral_cuts = [
+('Al', 1.40, 1.63),
+('Si', 1.63, 1.86),
+('P', 1.86, 2.16),
+('S', 2.16, 2.44),
+('Rh L + Ar', 2.44, 3.10),
+('K', 3.10, 3.46),
+('Ca ka', 3.46, 3.86),
+('Ca kb', 3.86, 4.16),
+('background1', 4.14, 4.37),
+('Ti ka', 4.37, 4.66),
+('Ti kb', 4.66, 5.08),
+('background2', 5.08, 5.72),
+('Mn', 5.72, 6.10),
+('Fe ka', 6.10, 6.76),
+('Fe kb', 6.76, 7.20),
+('Ni', 7.20, 7.69),
+('background3', 7.69, 13.10),
+('sum Fe' , 13.10, 13.63),
+('background4', 13.63, 18.0),
+('Compton scattering', 18.0, 19.70),
+('Rayleight scattering', 19.70, 20.80)
+]
 
 import shap
 
-model_predict_proba = lambda x: svm_model[3].predict_proba(x)[:, 1] # o 1 é a probabilidade da classe positiva
-explainer = shap.KernelExplainer(model_predict_proba, Xcalclass_prep)  # using a subset of calibration data as background for SHAP
-shap_exp = explainer(Xcalclass_prep)  # explain a subset of calibration data
+# Para PLSRegression, usamos KernelExplainer porque não há explainer dedicado muito rápido
+explainer_pls = shap.KernelExplainer(plsda_results[3].predict, Xcalclass_prep, njobs=22)
+shap_values_pls = explainer_pls(Xcalclass_prep)
 
-shap_values = shap_exp.values
 shap_global_importance = pd.DataFrame({
-    'energy': Xcalclass_prep.columns,
-    'Mean_Abs_SHAP': np.abs(shap_values).mean(axis=0)})
+    'energy': Xpredclass_prep.columns,
+    'Mean_Abs_SHAP': np.abs(shap_values_pls.values).mean(axis=0)}) # tomando a importancia global como a media dos valores absolutos dos valores SHAP para cada feature
+shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False, inplace=True)
 
 # # vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
 # energy_to_zone_shap = {}
@@ -68,6 +97,6 @@ shap_global_importance = pd.DataFrame({
 # shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_zone_shap)
 
 # # agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
-# shap_unique_df = shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
-# shap_unique_df = shap_unique_df.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
-shap_global_importance.to_csv('shap_soil.csv', index=False, sep=';')
+# shap_unique_df = shap_global_importance.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
+# shap_unique_df = shap_unique_df.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
+shap_global_importance.to_csv('shap_forage.csv', index=False, sep=';')

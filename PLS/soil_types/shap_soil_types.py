@@ -39,24 +39,62 @@ import preprocessings as prepr # preprocessing methods for XRF data
 Xcalclass_prep, mean_calclass, mean_calclass_poisson  = prepr.poisson(Xcalclass, mc=True)
 Xpredclass_prep = ((Xpredclass/np.sqrt(mean_calclass)) - mean_calclass_poisson)
 
+from modeling import pls_optimized
 
-from modeling import svm_optimized
+# performing PLS-DA with optimized latent variables
+plsda_results = pls_optimized(Xcalclass_prep, 
+                              ycalclass,
+                              LVmax=2,
+                              Xpred=Xpredclass_prep,
+                              ypred=ypredclass,
+                              aim='classification',
+                              cv=10)
+plsda_results[0]
 
-svm_model = svm_optimized(Xcalclass_prep, ycalclass, Xpredclass_prep, ypredclass, aim='classification', kernel='rbf')
+
+# Convenience references used later
+pls_model = plsda_results[3]               # fitted PLS model
+vip_scores_mat = plsda_results[4]          # VIP scores matrix (features × LV)
+y_pred_cont = plsda_results[5].iloc[:, -1] # continuous predictions for Xcalclass (used for MI/Cov)
+
+
 # establishing spectral cuts based on expert knowledge of XRF spectra
+spectral_cuts = [
+('Al', 1.33, 1.63),
+('Si', 1.63, 1.86),
+('P', 1.86, 2.19),
+('S', 2.19, 2.55),
+('Rh L + Ar', 2.55, 3.21),
+('K', 3.21, 3.53),
+('Ca ka', 3.53, 3.84),
+('Ca kb', 3.84, 4.37),
+('Ti ka', 4.37, 4.75),
+('Ti kb', 4.75, 5.12),
+('Cr', 5.12, 5.77),
+('Mn', 5.77, 6.13),
+('Fe ka', 6.13, 6.80),
+('Fe kb', 6.80, 7.30),
+('Ni', 7.30, 7.91),
+('Cu', 7.91, 8.20),
+('Zn', 8.20, 9.0),
+('background1', 9.0, 10.69),
+('Fe ka + Ti ka', 10.69, 11.14),
+('background2', 11.14, 12.55),
+('sum Fe' , 12.55, 13.1),
+]
 
 import shap
 
-model_predict_proba = lambda x: svm_model[3].predict_proba(x)[:, 1] # o 1 é a probabilidade da classe positiva
-explainer = shap.KernelExplainer(model_predict_proba, Xcalclass_prep)  # using a subset of calibration data as background for SHAP
-shap_exp = explainer(Xcalclass_prep)  # explain a subset of calibration data
+# Para PLSRegression, usamos KernelExplainer porque não há explainer dedicado muito rápido
+explainer_pls = shap.KernelExplainer(plsda_results[3].predict, Xcalclass_prep, njobs=22)
+shap_values_pls = explainer_pls(Xcalclass_prep)
 
-shap_values = shap_exp.values
 shap_global_importance = pd.DataFrame({
-    'energy': Xcalclass_prep.columns,
-    'Mean_Abs_SHAP': np.abs(shap_values).mean(axis=0)})
+    'energy': Xpredclass_prep.columns,
+    'Mean_Abs_SHAP': np.abs(shap_values_pls.values).mean(axis=0)}) # tomando a importancia global como a media dos valores absolutos dos valores SHAP para cada feature
+shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False, inplace=True)
 
-# vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
+# # vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
 # energy_to_zone_shap = {}
 # for zone_name, start, end in spectral_cuts:
 #     for i in shap_global_importance['energy']:
@@ -66,6 +104,6 @@ shap_global_importance = pd.DataFrame({
 # shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_zone_shap)
 
 # # agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
-# shap_unique_df = shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
-# shap_unique_df = shap_unique_df.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
-shap_global_importance.to_csv('shap_soil_type.csv', index=False, sep=';')
+# shap_unique_df = shap_global_importance.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
+# shap_unique_df = shap_unique_df.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
+shap_global_importance.to_csv('shap_soil_types.csv', index=False, sep=';')
