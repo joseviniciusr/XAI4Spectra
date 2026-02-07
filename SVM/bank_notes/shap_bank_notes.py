@@ -13,18 +13,18 @@ if str(parent_dir) not in sys.path: # check to avoid duplicates
 
 # Loading a soil spectral dataset based on X-ray fluorescence (XRF)
 data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/bank_notes/plsda/bank_notes.csv', sep=';') # local copy of Toledo 2022 dataset (os ... indica para omitir o caminho longo)
-data = data_complete.loc[:, '1':'26.07']
+data = data_complete.loc[:, '2.74':'22.71']
 
 # Split dataset by class and create calibration/prediction sets using Kennard-Stone (as in original pipeline)
 data_A = data_complete[data_complete['Class'] == 'A'].reset_index(drop=True)
 data_B = data_complete[data_complete['Class'] == 'B'].reset_index(drop=True)
 
 # splitting the data into calibration and prediction sets by kennard-stone algorithm
-XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1':'26.07'], test_size=0.30)  # class A
+XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '2.74':'22.71'], test_size=0.30)  # class A
 XA_cal = XA_cal.reset_index(drop=True)
 XA_pred = XA_pred.reset_index(drop=True)
 
-XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1':'26.07'], test_size=0.30)  # class B
+XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '2.74':'22.71'], test_size=0.30)  # class B
 XB_cal = XB_cal.reset_index(drop=True)
 XB_pred = XB_pred.reset_index(drop=True)
 
@@ -43,25 +43,6 @@ Xpredclass_prep = ((Xpredclass/np.sqrt(mean_calclass)) - mean_calclass_poisson)
 from modeling import svm_optimized
 
 svm_model = svm_optimized(Xcalclass_prep, ycalclass, Xpredclass_prep, ypredclass, aim='classification', kernel='rbf')
-
-# establishing spectral cuts based on expert knowledge of XRF spectra
-spectral_cuts = [
-('Ar ka + Ag L', 2.76, 3.47),
-('Ca ka', 3.5, 3.91),
-('Ca kb', 3.93, 4.24),
-('Ti ka', 4.26, 4.72),
-('Ti kb', 4.75, 5.13),
-('background1', 5.16, 6.12),
-('Fe ka', 6.15, 6.76),
-('Fe kb', 6.79, 7.32),
-('background2', 7.35, 7.78),
-('Cu ka', 7.81, 8.29),
-('Zn ka', 8.29, 8.80),
-('Cu kb', 8.80, 9.26),
-('Zn kb', 9.26, 10.00),
-('background3', 10.00, 21.46),
-('Ag ka scattering', 21.49, 22.71)
-] 
 
 import shap
 

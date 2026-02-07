@@ -1,23 +1,23 @@
 SVM_pvector;Shap;Permutation;LRC_perturbation;LRC_covariance
 Fe ka;Si;Fe ka;Si;Fe ka
-Ca ka;Ca ka;K;Ca ka;Ca ka
-Si;Fe ka;Ca ka;Fe ka;Si
+Ca ka;Ca ka;Ca ka;Ca ka;Ca ka
+Si;Fe ka;K;Fe ka;Si
 K;K;Si;K;K
 Ca kb;background4;Rh L + Ar;Rh L + Ar;Ti ka
-Ti ka;Rh L + Ar;Ca kb;Ca kb;Fe kb
-Fe kb;Ca kb;Ti ka;Ti ka;Rh L + Ar
-Rh L + Ar;background3;Fe kb;Fe kb;Ca kb
-P;Fe kb;P;background4;Al
+Ti ka;Rh L + Ar;Ca kb;Ti ka;Ca kb
+Fe kb;background3;Ti ka;Ca kb;Fe kb
+Rh L + Ar;Compton scattering;Fe kb;Fe kb;Rh L + Ar
+P;S;P;background4;Al
 S;sum Fe;Mn;background3;Ti kb
-sum Fe;Compton scattering;S;P;P
+sum Fe;Al;S;P;P
 Al;Rayleight scattering;Al;Mn;Compton scattering
-Ti kb;S;sum Fe;Compton scattering;sum Fe
-Ni;Al;Ni;S;Rayleight scattering
-Mn;Ti kb;Ti kb;Ti kb;Mn
-Compton scattering;background2;background3;sum Fe;background4
-background3;background1;Compton scattering;Ni;Ni
-Rayleight scattering;Ti ka;background4;Rayleight scattering;S
-background4;Mn;Rayleight scattering;Al;background3
-background1;P;;background2;background2
-background2;;background1;background1;background1
-;Ni;background2;;
+Ti kb;background2;sum Fe;Compton scattering;sum Fe
+Ni;Ti kb;Ni;S;Rayleight scattering
+Mn;background1;Ti kb;Al;Mn
+Compton scattering;Ti ka;background3;sum Fe;background4
+background3;Mn;Compton scattering;Rayleight scattering;S
+Rayleight scattering;P;background4;Ni;Ni
+background4;Ca kb;Rayleight scattering;Ti kb;background3
+background1;Fe kb;;background2;background2
+background2;Ni;background1;background1;background1
+;;background2;;
