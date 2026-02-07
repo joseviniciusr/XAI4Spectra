@@ -13,18 +13,18 @@ if str(parent_dir) not in sys.path: # check to avoid duplicates
 
 # Loading a soil spectral dataset based on X-ray fluorescence (XRF)
 data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/soil/plsda/soil.csv', sep=';') # local copy of Toledo 2022 dataset (os ... indica para omitir o caminho longo)
-data = data_complete.loc[:, '1':'15']
+data = data_complete.loc[:, '1.32':'13.1']
 
 # Split dataset by class and create calibration/prediction sets using Kennard-Stone (as in original pipeline)
 data_A = data_complete[data_complete['Class'] == 'A'].reset_index(drop=True)
 data_B = data_complete[data_complete['Class'] == 'B'].reset_index(drop=True)
 
 # splitting the data into calibration and prediction sets by kennard-stone algorithm
-XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1':'15'], test_size=0.30)  # class A
+XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1.32':'13.1'], test_size=0.30)  # class A
 XA_cal = XA_cal.reset_index(drop=True)
 XA_pred = XA_pred.reset_index(drop=True)
 
-XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1':'15'], test_size=0.30)  # class B
+XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1.32':'13.1'], test_size=0.30)  # class B
 XB_cal = XB_cal.reset_index(drop=True)
 XB_pred = XB_pred.reset_index(drop=True)
 
@@ -48,29 +48,6 @@ mlp_model = mlp_optimized(Xcalclass_prep, ycalclass, Xpredclass_prep, ypredclass
                           learning_rate='adaptive',
                           max_iter=10,
                           random_state=1)
-
-spectral_cuts = [
-('Al', 1.33, 1.63),
-('Si', 1.63, 1.86),
-('P', 1.86, 2.19),
-('S', 2.19, 2.55),
-('Rh L + Ar', 2.55, 3.21),
-('K', 3.21, 3.53),
-('Ca ka', 3.53, 3.84),
-('Ca kb', 3.84, 4.37),
-('Ti ka', 4.37, 4.75),
-('Ti kb', 4.75, 5.12),
-('Cr', 5.12, 5.77),
-('Mn', 5.77, 6.13),
-('Fe ka', 6.13, 6.80),
-('Fe kb', 6.80, 7.30),
-('background1', 7.30, 7.91),
-('Cu', 7.91, 8.20),
-('background2', 8.20, 10.69),
-('Fe ka + Ti ka', 10.69, 11.14),
-('background3', 11.14, 12.55),
-('sum Fe' , 12.55, 13.1)
-]
 
 import shap
 

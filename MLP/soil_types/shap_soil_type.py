@@ -13,18 +13,18 @@ if str(parent_dir) not in sys.path: # check to avoid duplicates
 
 # Loading a soil spectral dataset based on X-ray fluorescence (XRF)
 data_complete = pd.read_csv(f'{parent_dir}/XRF_databases/soil_types/plsda/soil_types.csv', sep=';') # local copy of Toledo and Guarapuava soil datasets
-data = data_complete.loc[:, '1':'15']
+data = data_complete.loc[:, '1.32':'13.1']
 
 # Split dataset by class and create calibration/prediction sets using Kennard-Stone (as in original pipeline)
 data_A = data_complete[data_complete['Class'] == 'A'].reset_index(drop=True)
 data_B = data_complete[data_complete['Class'] == 'B'].reset_index(drop=True)
 
 # splitting the data into calibration and prediction sets by kennard-stone algorithm
-XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1':'15'], test_size=0.30) # class A
+XA_cal, XA_pred = ks.train_test_split(data_A.loc[:, '1.32':'13.1'], test_size=0.30) # class A
 XA_cal = XA_cal.reset_index(drop=True)
 XA_pred = XA_pred.reset_index(drop=True)
 
-XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1':'15'], test_size=0.30) # class B
+XB_cal, XB_pred = ks.train_test_split(data_B.loc[:, '1.32':'13.1'], test_size=0.30) # class B
 XB_cal = XB_cal.reset_index(drop=True)
 XB_pred = XB_pred.reset_index(drop=True)
 
