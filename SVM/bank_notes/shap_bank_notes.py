@@ -46,24 +46,21 @@ svm_model = svm_optimized(Xcalclass_prep, ycalclass, Xpredclass_prep, ypredclass
 
 # establishing spectral cuts based on expert knowledge of XRF spectra
 spectral_cuts = [
-('background1', 1.0, 2.74),
 ('Ar ka + Ag L', 2.76, 3.47),
 ('Ca ka', 3.5, 3.91),
 ('Ca kb', 3.93, 4.24),
 ('Ti ka', 4.26, 4.72),
 ('Ti kb', 4.75, 5.13),
-('background2', 5.16, 6.12),
+('background1', 5.16, 6.12),
 ('Fe ka', 6.15, 6.76),
 ('Fe kb', 6.79, 7.32),
-('background3', 7.35, 7.78),
+('background2', 7.35, 7.78),
 ('Cu ka', 7.81, 8.29),
 ('Zn ka', 8.29, 8.80),
 ('Cu kb', 8.80, 9.26),
 ('Zn kb', 9.26, 10.00),
-('background4', 10.00, 21.46),
-('Ag ka scattering', 21.49, 22.71),
-('background5', 22.74, 24.52),
-('background6', 24.55, 26.07),
+('background3', 10.00, 21.46),
+('Ag ka scattering', 21.49, 22.71)
 ] 
 
 import shap
@@ -77,16 +74,16 @@ shap_global_importance = pd.DataFrame({
     'energy': Xcalclass_prep.columns,
     'Mean_Abs_SHAP': np.abs(shap_values).mean(axis=0)})
 
-# vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
-energy_to_zone_shap = {}
-for zone_name, start, end in spectral_cuts:
-    for i in shap_global_importance['energy']:
-        i_float = float(i)
-        if start <= i_float <= end:
-            energy_to_zone_shap[i] = zone_name
-shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_zone_shap)
+# # vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
+# energy_to_zone_shap = {}
+# for zone_name, start, end in spectral_cuts:
+#     for i in shap_global_importance['energy']:
+#         i_float = float(i)
+#         if start <= i_float <= end:
+#             energy_to_zone_shap[i] = zone_name
+# shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_zone_shap)
 
-# agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
-shap_unique_df = shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
-shap_unique_df = shap_unique_df.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
-shap_unique_df.to_csv('shap_bank_notes.csv', index=False, sep=';')
+# # agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
+# shap_unique_df = shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
+# shap_unique_df = shap_unique_df.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
+shap_global_importance.to_csv('shap_bank_notes.csv', index=False, sep=';')

@@ -79,16 +79,16 @@ shap_global_importance = pd.DataFrame({
     'energy': Xcalclass_prep.columns,
     'Mean_Abs_SHAP': np.abs(shap_values).mean(axis=0)})
 
-# vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
-energy_to_zone_shap = {}
-for zone_name, start, end in spectral_cuts:
-    for i in shap_global_importance['energy']:
-        i_float = float(i)
-        if start <= i_float <= end:
-            energy_to_zone_shap[i] = zone_name
-shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_zone_shap)
+# # vamos gerar uma nova coluna em shap_global_importance com o nome da zona espectral correspondente de acordo com a lista spectral_cuts
+# energy_to_zone_shap = {}
+# for zone_name, start, end in spectral_cuts:
+#     for i in shap_global_importance['energy']:
+#         i_float = float(i)
+#         if start <= i_float <= end:
+#             energy_to_zone_shap[i] = zone_name
+# shap_global_importance['Zone'] = shap_global_importance['energy'].map(energy_to_zone_shap)
 
-# agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
-shap_unique_df = shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
-shap_unique_df = shap_unique_df.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
-shap_unique_df.to_csv('shap_forage.csv', index=False, sep=';')
+# # agora vamos filtrar shap_global_importance para manter apenas as zonas espectrais únicas com maior SHAP score
+# shap_unique_df = shap_global_importance.sort_values(by='Mean_Abs_SHAP', ascending=False).reset_index(drop=True)
+# shap_unique_df = shap_unique_df.drop_duplicates(subset=['Zone'], keep='first').reset_index(drop=True)
+shap_global_importance.to_csv('shap_forage.csv', index=False, sep=';')
