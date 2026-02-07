@@ -1,8 +1,8 @@
 Shap;Permutation;LRC_perturbation;LRC_covariance
-Ag Lb;Ag ka;Bremsstrahlung;Ag La
-Ag La;Ag La;Ag La;Ag Lb
-Ag ka;Ag Lb;Ag ka;Ag ka
-Zn;Ag compton;Ag Lb;Zn
+Ag Lb;Ag ka;Ag La;Ag La
+Ag La;Ag La;Bremsstrahlung;Ag Lb
+Ag ka;Ag Lb;Ag Lb;Ag ka
+Zn;Ag compton;Ag ka;Zn
 Ag compton;Zn;Ag compton;Ag compton
 Bremsstrahlung;Bremsstrahlung;background;Ca
 background;Cu;Zn;Fe

@@ -1,0 +1,24 @@
+VIP_Score;Reg_Coefficient;Shap;Permutation;LRC_perturbation;LRC_covariance
+Fe ka;Si;Si;Si;Si;Fe ka
+K;Ca ka;Ca ka;Ca ka;Ca ka;Ca ka
+Si;Rh L + Ar;Rh L + Ar;K;Rh L + Ar;Si
+Ca ka;Ca kb;K;Rh L + Ar;Ca kb;K
+Ca kb;P;Ca kb;Ca kb;Fe ka;Ti ka
+Ti ka;K;Fe ka;Fe ka;K;Fe kb
+Fe kb;S;background1;P;Ti ka;Ca kb
+Rh L + Ar;Mn;Cu;Mn;P;Rh L + Ar
+P;Al;Ni;S;Mn;P
+Al;Ni;Fe kb;Ti ka;S;Al
+Mn;Fe ka;P;Al;background3;Ti kb
+S;Ti ka;Mn;Ni;Compton scattering;Compton scattering
+Ti kb;Ti kb;Ti ka;background2;Ni;sum Fe
+sum Fe;background2;S;Ti kb;background2;Rayleight scattering
+Ni;Zn;Ti kb;Compton scattering;sum Fe;Mn
+Compton scattering;Compton scattering;Al;Fe kb;Ti kb;S
+background2;Fe kb;Rayleight scattering;sum Fe;Zn;background3
+Rayleight scattering;background1;Compton scattering;Zn;background1;Cu
+background3;sum Fe;sum Fe;background3;Rayleight scattering;background2
+Zn;Cu;background2;Cu;Al;background1
+Cu;background3;background3;Rayleight scattering;Fe kb;Zn
+background1;Rayleight scattering;Zn;background1;Cu;Ni
+;;;;;

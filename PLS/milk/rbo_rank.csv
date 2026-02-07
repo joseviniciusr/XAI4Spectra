@@ -1,0 +1,16 @@
+Method_1;Method_2;RBO_Score
+VIP_Score;LRC_covariance;0.9647887747666666
+VIP_Score;LRC_perturbation;0.9232179751
+LRC_perturbation;LRC_covariance;0.9162542747666667
+VIP_Score;Shap;0.8246998747666666
+Shap;LRC_covariance;0.8215793750999999
+Shap;LRC_perturbation;0.8018903747666667
+Reg_Coefficient;Permutation;0.7817023747666667
+Shap;Permutation;0.6460274750999999
+VIP_Score;Permutation;0.5504248747666666
+Permutation;LRC_covariance;0.5473043751
+Permutation;LRC_perturbation;0.5018903747666666
+Reg_Coefficient;Shap;0.4817023747666666
+VIP_Score;Reg_Coefficient;0.3642179750999999
+Reg_Coefficient;LRC_covariance;0.35725427476666666
+Reg_Coefficient;LRC_perturbation;0.3240869750999999

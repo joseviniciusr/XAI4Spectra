@@ -7,6 +7,6 @@ Bremsstrahlung;Zn;Bremsstrahlung;Ag compton;Bremsstrahlung
 Fe;Ag compton;Ag compton;background;Zn
 Ag compton;Fe;Fe;Cu;Fe
 background;Ca;Cu;Zn;Ca
-Ca;Cu;Ca;Fe;background
-Cu;background;background;Ca;Cu
+Ca;Cu;Ca;Ca;background
+Cu;background;background;Fe;Cu
 ;;;;

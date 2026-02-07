@@ -1,11 +1,11 @@
 Method_1;Method_2;RBO_Score
 SVM_pvector;Permutation;0.9635781665566666
-Permutation;LRC_perturbation;0.9460838803066666
-SVM_pvector;LRC_perturbation;0.9441622799733332
+LRC_perturbation;LRC_covariance;0.9153489937233332
 Shap;Permutation;0.8782786583466666
 SVM_pvector;Shap;0.8744471665566665
+Permutation;LRC_perturbation;0.8713588803066665
 Shap;LRC_perturbation;0.8701482720966666
+SVM_pvector;LRC_perturbation;0.8694372799733332
 Shap;LRC_covariance;0.8663489937233332
-SVM_pvector;LRC_covariance;0.8425455940566665
-LRC_perturbation;LRC_covariance;0.8406239937233332
-Permutation;LRC_covariance;0.8394133855133332
+SVM_pvector;LRC_covariance;0.8406239937233332
+Permutation;LRC_covariance;0.8374917851799999
