@@ -3922,3 +3922,338 @@ def map_thresholds_to_natural(
     result_df['Node_Natural'] = node_natural_list
 
     return result_df
+
+def aggregate_spectral_zones_pca(spectral_zones_dict):
+    """
+    Agrega zonas espectrais usando PCA com 1 componente principal.
+    
+    Para cada zona espectral, ajusta uma PCA com 1 componente e extrai:
+    - Scores: projeção das amostras na direção de máxima variância
+    - Loadings: pesos de cada variável na PC1
+    - Média: vetor de médias da zona (para reconstrução)
+    - Variância Explicada: fração da variância capturada pela PC1
+    
+    Parameters
+    ----------
+    spectral_zones_dict : dict
+        Dicionário retornado por extract_spectral_zones.
+        Chaves = nomes das zonas, Valores = DataFrames com dados espectrais.
+    
+    Returns
+    -------
+    scores_df : pd.DataFrame
+        DataFrame com scores da PC1 para cada zona (amostras x zonas).
+    pca_info_dict : dict
+        Dicionário com informações da PCA para cada zona:
+        - 'loadings': vetor de loadings da PC1
+        - 'mean': vetor de médias da zona
+        - 'variance_explained': fração de variância explicada
+        - 'columns': nomes das colunas originais (para reconstrução)
+    """
+    from sklearn.decomposition import PCA
+    import pandas as pd
+
+    scores_dict = {}  # armazena scores de cada zona
+    pca_info_dict = {}  # armazena informações para reconstrução
+    
+    for zone_name, zone_df in spectral_zones_dict.items():
+        # 1: Preparação dos dados
+        X_zone = zone_df.values  # converter para numpy array
+        
+        # 2: Ajuste da PCA com 1 componente
+        pca = PCA(n_components=1)
+        scores = pca.fit_transform(X_zone)  # scores da PC1 (n_samples, 1)
+        
+        # 3: Extração das informações
+        loadings = pca.components_[0]  # loadings da PC1 (d_m,)
+        mean_vector = pca.mean_  # vetor de médias (d_m,)
+        variance_explained = pca.explained_variance_ratio_[0]  # fração de variância
+        
+        # 4: Armazenamento
+        scores_dict[zone_name] = scores.flatten()  # converter para 1D
+        
+        pca_info_dict[zone_name] = {
+            'loadings': loadings,
+            'mean': mean_vector,
+            'variance_explained': variance_explained,
+            'columns': zone_df.columns.tolist(),  # nomes das colunas originais
+            'pca_model': pca  # modelo PCA completo (para uso futuro)
+        }
+        
+        # Log informativo
+        print(f"Zona '{zone_name}': VE = {variance_explained:.2%}, "
+              f"dim = {len(loadings)} variáveis")
+    
+    # Criar DataFrame com todos os scores
+    scores_df = pd.DataFrame(scores_dict)
+    
+    return scores_df, pca_info_dict
+
+def reconstruct_threshold_to_spectrum(threshold_value, zone_name, pca_info_dict):
+    """
+    Reconstrói um threshold escalar (no espaço dos scores) para o espaço 
+    espectral original, gerando um "espectro de threshold" multivariado.
+    
+    Fórmula matemática:
+        τ = mean + threshold_value * loadings
+    
+    Parameters
+    ----------
+    threshold_value : float
+        Valor do threshold no espaço dos scores da PC1.
+    zone_name : str
+        Nome da zona espectral.
+    pca_info_dict : dict
+        Dicionário com informações da PCA (retornado por aggregate_spectral_zones_pca).
+    
+    Returns
+    -------
+    threshold_spectrum : pd.Series
+        Espectro de threshold com índice = energias/comprimentos de onda originais.
+    """
+    import pandas as pd
+    # Recuperar informações da PCA
+    pca_info = pca_info_dict[zone_name]
+    loadings = pca_info['loadings']
+    mean_vector = pca_info['mean']
+    columns = pca_info['columns']
+    
+    # Reconstrução: τ = mean + q * loadings
+    threshold_spectrum = mean_vector + threshold_value * loadings
+    
+    # Converter para Series com índice original
+    threshold_spectrum = pd.Series(threshold_spectrum, index=columns, name=f'threshold_{threshold_value:.4f}')
+    
+    return threshold_spectrum
+
+def extract_predicate_info(predicate_rule):
+    """
+    Extrai informações de uma regra de predicado.
+    
+    Parameters
+    ----------
+    predicate_rule : str
+        Regra no formato "zone_name <= threshold" ou "zone_name > threshold"
+    
+    Returns
+    -------
+    dict : {'zone': str, 'operator': str, 'threshold': float}
+    """
+    if '<=' in predicate_rule:
+        parts = predicate_rule.split('<=')
+        operator = '<='
+    elif '>' in predicate_rule:
+        parts = predicate_rule.split('>')
+        operator = '>'
+    else:
+        raise ValueError(f"Operador não reconhecido em: {predicate_rule}")
+    
+    zone_name = parts[0].strip()
+    threshold_value = float(parts[1].strip())
+    
+    return {
+        'zone': zone_name,
+        'operator': operator,
+        'threshold': threshold_value
+    }
+
+def extract_zone_from_predicate(predicate_rule):
+    """
+    Extrai o nome da zona espectral a partir da regra do predicado.
+    
+    Parameters
+    ----------
+    predicate_rule : str
+        Regra no formato "zone_name <= threshold" ou "zone_name > threshold"
+    
+    Returns
+    -------
+    str : Nome da zona espectral
+    
+    Examples
+    --------
+    >>> extract_zone_from_predicate("Ca ka <= 25.5")
+    'Ca ka'
+    >>> extract_zone_from_predicate("Fe ka > 10.2")
+    'Fe ka'
+    """
+    if '<=' in predicate_rule:
+        return predicate_rule.split('<=')[0].strip()
+    elif '>' in predicate_rule:
+        return predicate_rule.split('>')[0].strip()
+    else:
+        raise ValueError(f"Operador não reconhecido em: {predicate_rule}")
+
+
+def build_predicate_graphv3_pca(bags_result, predicate_ranking_dict, 
+                            metric_column='Cov',
+                            random_state=42, show_details=True,
+                            var_exp=False, pca_info_dict=None):
+    """
+    Constrói um grafo direcionado de predicados onde os pesos das arestas
+    são baseados na Covariância (ou outra métrica) do predicado de ORIGEM.
+    
+    Parameters
+    ----------
+    - **bags_result** : dict
+        Dicionário com bags de predicados:
+        {'Bag_1': {'Ca ka <= 25.5': DataFrame, ...}, 'Bag_2': {...}, ...}
+        
+    - **predicate_ranking_dict** : dict
+        Dicionário com rankings de predicados segundo uma métrica para cada bag:
+        {'Bag_1': DataFrame(['Predicate', metric_column]), 'Bag_2': ...}
+        
+    - **metric_column** : str, default='Cov'
+        Nome da coluna no predicate_ranking_dict que contém a métrica de ordenação.
+        Permite flexibilidade para usar 'Cov', 'Permutation', etc.
+        
+    - **random_state** : int, default=42
+        Semente para desempate aleatório de arestas bidirecionais.
+        
+    - **show_details** : bool, default=True
+        Se True, imprime detalhes sobre remoção de arestas bidirecionais.
+        
+    - **var_exp** : bool, default=False
+        Se True, multiplica os pesos das arestas pela variância explicada (PC1)
+        da zona espectral correspondente ao predicado de origem.
+        
+    - **pca_info_dict** : dict, optional
+        Dicionário com informações da PCA para cada zona (obrigatório se var_exp=True).
+        Chaves = nomes das zonas, Valores = dict com 'variance_explained'.
+    
+    Returns
+    -------
+    - **DG** : nx.DiGraph
+        Grafo direcionado com pesos baseados na métrica acumulada.
+
+    """
+    import networkx as nx
+    import numpy as np
+    import pandas as pd
+    
+    # Validação dos parâmetros var_exp
+    if var_exp:
+        if pca_info_dict is None:
+            raise ValueError("pca_info_dict é obrigatório quando var_exp=True")
+    
+    # Define semente para reprodutibilidade nos desempates
+    np.random.seed(random_state)
+    
+    # FASE 1: INICIALIZAÇÃO DO GRAFO
+    DG = nx.DiGraph()
+    DG.add_node('Class_A', node_type='terminal', class_label='A')
+    DG.add_node('Class_B', node_type='terminal', class_label='B')
+    
+    # FASE 2: CONSTRUÇÃO DOS CAMINHOS E ACUMULAÇÃO DE PESOS
+    for bag_name, bag_predicates_dict in bags_result.items():
+        
+        # 2.1: Obtém o ranking de métricas para este bag
+        predicate_ranking = predicate_ranking_dict[bag_name]
+        ordered_predicates = predicate_ranking['Predicate'].tolist()
+        
+        # Filtra apenas predicados que existem neste bag específico
+        ordered_predicates = [p for p in ordered_predicates if p in bag_predicates_dict.keys()]
+        
+        if len(ordered_predicates) == 0:
+            continue
+        
+        # 2.2: Cria dicionário de lookup para métrica
+        ranking_lookup = dict(zip(predicate_ranking['Predicate'], predicate_ranking[metric_column]))
+        
+        # 2.3: Constrói arestas entre predicados consecutivos
+        for i in range(len(ordered_predicates) - 1):
+            pred_current = ordered_predicates[i]
+            pred_next = ordered_predicates[i + 1]
+            
+            DG.add_node(pred_current, node_type='predicate')
+            DG.add_node(pred_next, node_type='predicate')
+            
+            ranking_value = float(ranking_lookup[pred_current])
+            
+            # Ponderar pela variância explicada se var_exp=True
+            if var_exp:
+                zone_name = extract_zone_from_predicate(pred_current)
+                if zone_name in pca_info_dict:
+                    ranking_value *= pca_info_dict[zone_name]['variance_explained']
+            
+            # Acumular peso se aresta já existe
+            if DG.has_edge(pred_current, pred_next):
+                DG[pred_current][pred_next]['weight'] += ranking_value
+            else:
+                DG.add_edge(pred_current, pred_next, weight=ranking_value, bag=bag_name)
+        
+        # 2.4: Conecta o ÚLTIMO predicado ao nó terminal
+        last_pred = ordered_predicates[-1]
+        DG.add_node(last_pred, node_type='predicate')
+        
+        df_last = bag_predicates_dict[last_pred]
+        class_counts = df_last['Class_Predicted'].value_counts()
+        majority_class = class_counts.idxmax()
+        terminal_node = f'Class_{majority_class}'
+        
+        ranking_last_value = float(ranking_lookup[last_pred])
+        
+        if var_exp:
+            zone_name = extract_zone_from_predicate(last_pred)
+            if zone_name in pca_info_dict:
+                ranking_last_value *= pca_info_dict[zone_name]['variance_explained']
+        
+        if DG.has_edge(last_pred, terminal_node):
+            DG[last_pred][terminal_node]['weight'] += ranking_last_value
+        else:
+            DG.add_edge(last_pred, terminal_node, weight=ranking_last_value, bag=bag_name)
+
+    # FASE 3: IDENTIFICAÇÃO DE ARESTAS BIDIRECIONAIS
+    bidirectional_pairs = []
+    processed = set()
+    
+    for u, v in DG.edges():
+        if DG.has_edge(v, u) and (v, u) not in processed:
+            bidirectional_pairs.append({
+                'node_A': u, 'node_B': v,
+                'weight_A_to_B': float(DG[u][v]['weight']),
+                'weight_B_to_A': float(DG[v][u]['weight'])
+            })
+            processed.add((u, v))
+            processed.add((v, u))
+    
+    print(f"\nTotal de pares bidirecionais encontrados: {len(bidirectional_pairs)}")
+    
+    # FASE 4: RESOLUÇÃO DE ARESTAS BIDIRECIONAIS
+    n_removed = 0
+    
+    for pair in bidirectional_pairs:
+        u, v = pair['node_A'], pair['node_B']
+        w_fwd, w_rev = pair['weight_A_to_B'], pair['weight_B_to_A']
+        
+        if w_fwd > w_rev:
+            DG.remove_edge(v, u)
+            if show_details:
+                print(f"Removida: {v} -> {u} ({w_rev:.4f}) | Mantida: {u} -> {v} ({w_fwd:.4f})")
+        elif w_rev > w_fwd:
+            DG.remove_edge(u, v)
+            if show_details:
+                print(f"Removida: {u} -> {v} ({w_fwd:.4f}) | Mantida: {v} -> {u} ({w_rev:.4f})")
+        else:
+            # Empate: escolha aleatória
+            if np.random.rand() > 0.5:
+                DG.remove_edge(v, u)
+                if show_details:
+                    print(f"Empate! Removida: {v} -> {u} ({w_rev:.4f})")
+            else:
+                DG.remove_edge(u, v)
+                if show_details:
+                    print(f"Empate! Removida: {u} -> {v} ({w_fwd:.4f})")
+        n_removed += 1
+
+    # FASE 5: RESUMO FINAL
+    print(f"\n{'='*70}")
+    print("RESUMO DO GRAFO CONSTRUÍDO")
+    print(f"{'='*70}")
+    print(f"Arestas iniciais: {DG.number_of_edges() + n_removed} | Removidas: {n_removed}")
+    print(f"Nós predicados: {len([n for n, attr in DG.nodes(data=True) if attr['node_type'] == 'predicate'])}")
+    print(f"Métrica: {metric_column}")
+    if var_exp:
+        print("Ponderação por variância explicada: ATIVADA")
+    
+    return DG
